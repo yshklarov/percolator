@@ -19,20 +19,15 @@ Usage
 -----
   * (TODO)
 
-Installation
-------------
-
-Binaries for Windows are [available here](https://yakov.shklarov.com/percolator/), but they could be out of date.
-
-
-Building from source
---------------------
+Building
+--------
 
 Requirements: Percolator uses [ImGui](https://github.com/ocornut/imgui) for the user
 interface. ImGui supports many platforms and graphics backends, so it should be relatively
 straightforward to get Percolator to build on your system.
 
 **Linux**:
+
     $ mkdir build
     $ cd build
     $ cmake ..
