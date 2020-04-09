@@ -1,7 +1,9 @@
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <string>
 #include <SDL.h>
+#undef main  // SDL clobbers "main" on Windows.
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"
 #include "imgui/examples/imgui_impl_sdl.h"
@@ -197,10 +199,10 @@ int main(int, char**) {
   std::chrono::time_point<std::chrono::high_resolution_clock> flow_start_time;
   auto clear_color {ImVec4(0.00F, 0.00F, 0.00F, 1.00F)};  // Background color behind DockSpace
   auto lattice_size {30};
-  float flow_speed {10.0};
+  float flow_speed {10.0F};
   auto lattice {Lattice(lattice_size, lattice_size)};
   auto probability_measure {ProbabilityMeasure::bernoulli};
-  const float rect_site_percolation_threshold {0.59274605};
+  const float rect_site_percolation_threshold {0.59274605F};
   float open_p {rect_site_percolation_threshold};
   regenerate_lattice(lattice, probability_measure, open_p);
   auto auto_percolate {false};

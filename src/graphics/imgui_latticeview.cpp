@@ -12,7 +12,14 @@
 #endif
 #include "imgui/imgui_internal.h"
 
+#ifdef _WIN32
+#define NOMINMAX    // Prevent windows.h from clobbering STL's min and max.
+#include <windows.h>
+#endif
 #include <GL/gl.h>
+#ifdef _WIN32
+#include <SDL_opengl_glext.h>
+#endif
 
 bool make_gl_texture_from_lattice(const Lattice* data, GLuint* out_texture) {
   int width {data->get_width()};
@@ -126,8 +133,8 @@ void Latticeview(const Lattice* data, bool redraw) {
   ImVec2 square_size {frame_size.x / image_width, frame_size.y / image_height};
   auto resolution {fmin(square_size.x, square_size.y)};
   if (resolution >= 20) {
-    float thickness {fmax(0.0F, (resolution - 20.0F) / 16.F)};
-    float alpha {fmin(1.0f, fmax(0.0F, (resolution - 20.0F) / 20.0F))};
+    float thickness {static_cast<float>(fmax(0.0F, (resolution - 20.0F) / 16.F))};
+    float alpha {static_cast<float>(fmin(1.0f, fmax(0.0F, (resolution - 20.0F) / 20.0F)))};
     auto border_color = ImGui::GetColorU32(ImVec4(0.0F, 0.0F, 0.0F, alpha));
     for (auto y {1}; y < image_height; ++y) {
       auto top {ImVec2(frame.Min.x, frame.Min.y + y * square_size.y)};
