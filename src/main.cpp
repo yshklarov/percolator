@@ -2,6 +2,12 @@
 #include <chrono>
 #include <iostream>
 #include <string>
+
+#ifdef _WIN32
+#define NOMINMAX    // Prevent windows.h from clobbering STL's min and max.
+#include <windows.h>
+#endif
+
 #include <SDL.h>
 #undef main  // SDL clobbers "main" on Windows.
 #include "imgui/imgui.h"
@@ -97,6 +103,12 @@ void regenerate_lattice(Lattice &lattice, const ProbabilityMeasure measure, cons
 }
 
 int main(int, char**) {
+#ifdef _WIN32
+  // TODO Once we set up logging, we'll have a proper Windows application. For now, we'll just
+  // hide the console window. Options: SW_HIDE, SW_MINIMIZE, ...
+  ShowWindow(GetConsoleWindow(), SW_HIDE);
+#endif
+
   // Set up SDL
   if (SDL_Init(SDL_INIT_VIDEO) != 0) {
     std::cerr << "Error: " << SDL_GetError() << '\n';
@@ -159,6 +171,9 @@ int main(int, char**) {
 #endif
   if (err) {
     std::cerr << "Failed to initialize OpenGL loader!\n";
+#if defined(IMGUI_IMPL_OPENGL_LOADER_GLEW)
+    std::cerr << glewGetErrorString(err) << '\n';
+#endif
     return 1;
   }
 

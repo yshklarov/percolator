@@ -1,4 +1,7 @@
 *~
 /build*
+/out
+/.vs
+CMakeSettings.json
 # /extern/imgui/*
 imgui.ini

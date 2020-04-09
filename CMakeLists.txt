@@ -41,16 +41,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED YES)
 set(CMAKE_CXX_EXTENSIONS NO)
 
 
-option(ENABLE_CCACHE
-  "Enable ccache (compiler cache) to speed up compile times"
-  ON)
-if(ENABLE_CCACHE)
-  find_program(CCACHE ccache)
-  if(CCACHE)
-    message("Found ccache: ${CCACHE}")
-    set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE})
-  else()
-    message("Ccache not found!")
+if(UNIX)
+  option(ENABLE_CCACHE
+    "Enable ccache (compiler cache) to speed up compile times"
+    ON)
+  if(ENABLE_CCACHE)
+    find_program(CCACHE ccache)
+    if(CCACHE)
+      message("Found ccache: ${CCACHE}")
+      set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE})
+    else()
+      message("Ccache not found!")
+    endif()
   endif()
 endif()
 
@@ -156,16 +158,17 @@ add_library(
   src/graphics/imgui_latticeview.h)
 target_include_directories(imgui_latticeview PRIVATE extern/ src/)
 
-set(main_exe "percolator")
-add_executable(${main_exe} src/main.cpp)
-target_include_directories(${main_exe} PUBLIC extern/)
-
 if(UNIX)
+  set(PLATFORM_RESOURCES "")
   set(PLATFORM_LINK_LIBS ${GLEW_LIBRARIES} ${SDL2_LIBRARIES})
 elseif(WIN32)
+  set(PLATFORM_RESOURCES "${CMAKE_CURRENT_SOURCE_DIR}/res/windows.rc")
   set(PLATFORM_LINK_LIBS OpenGL32 SDL2 glew32)
 endif()
 
+set(main_exe "percolator")
+add_executable(${main_exe} src/main.cpp ${PLATFORM_RESOURCES})
+target_include_directories(${main_exe} PUBLIC extern/)
 target_link_libraries(
   ${main_exe} PRIVATE
   lattice imgui_latticeview
@@ -187,38 +190,57 @@ if ( CMAKE_CXX_COMPILER_ID MATCHES "Clang" )
   target_compile_options( ${main_exe} PUBLIC
     -Wweak-vtables -Wexit-time-destructors -Wglobal-constructors -Wmissing-noreturn )
 endif()
-#if ( CMAKE_CXX_COMPILER_ID MATCHES "MSVC" )
-#  target_compile_options( ${main_exe} PUBLIC /permissive- /W3 /w44265 /w44061 /w44062 /std:c++20 )
-#  set_target_properties ( ${main_exe} PROPERTIES LINK_FLAGS "/SUBSYSTEM:WINDOWS")
-#  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2")  # Optimize for speed.
-#endif()
-if(WIN32)
-  if (MSVC)
-    set(CMAKE_CXX_FLAGS "/W3 /O2 /permissive-")
-  endif()
+if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+  set(CMAKE_CXX_FLAGS "/W3 /O2 /permissive-")
 endif()
 
-if(WIN32)
-#  add_definitions(-DWIN32)
-#  # Headers should be put in C:/Program\ Files/SDL2/include/SDL2/
-#  # Or should we just keep header files within our source tree? (Is that normal?)
-#  include_directories("C:/Program\ Files/SDL2/include")
-#  link_directories("C:/Program\ Files/SDL2/lib/x64")
-endif()
-
-# Copy resources into build.
+# Copy resources into build. (We have no resources so far.)
 #add_custom_command(TARGET ${main_exe} POST_BUILD
 #  COMMAND ${CMAKE_COMMAND} -E copy_directory
 #  ${CMAKE_SOURCE_DIR}/res $<TARGET_FILE_DIR:${main_exe}>/res)
 
 if(WIN32)
-  # Copy DLLs (see <https://stackoverflow.com/questions/10671916>).
-  add_custom_command(TARGET ${main_exe} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${PROJECT_SOURCE_DIR}/extern/windows/SDL2-2.0.12/lib/x64/SDL2.dll"
-        $<TARGET_FILE_DIR:${main_exe}>)
-  add_custom_command(TARGET ${main_exe} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${PROJECT_SOURCE_DIR}/extern/windows/glew-2.1.0/bin/Release/x64/glew32.dll"
-        $<TARGET_FILE_DIR:${main_exe}>)
+  # Copy DLLs to build directory (see <https://stackoverflow.com/questions/10671916>).
+  set(WIN32_DLLS
+      "SDL2-2.0.12/lib/x64/SDL2.dll"
+      "glew-2.1.0/bin/Release/x64/glew32.dll")
+  foreach(F IN LISTS WIN32_DLLS)
+    add_custom_command(TARGET ${main_exe} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E
+            copy_if_different "${PROJECT_SOURCE_DIR}/extern/windows/${F}"
+                              $<TARGET_FILE_DIR:${main_exe}>
+        COMMENT "Copying ${F} to build directory.")
+  endforeach()
+
+  option(BUILD_PACKAGE_FOR_DISTRIBUTION
+    "Create a .zip file for distribution after building"
+    OFF)
+  if(BUILD_PACKAGE_FOR_DISTRIBUTION)
+    # Copy the necessary files into the build tree.
+    add_custom_command(TARGET ${main_exe} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E
+            copy "${PROJECT_SOURCE_DIR}/LICENSE"
+                 "$<TARGET_FILE_DIR:${main_exe}>"
+        COMMENT "Copying distribution files to build directory.")
+    add_custom_command(TARGET ${main_exe} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E
+            copy_directory "${PROJECT_SOURCE_DIR}/extern/licenses"
+                           "$<TARGET_FILE_DIR:${main_exe}>/licenses"
+        COMMENT "Copying licenses to build directory.")
+    add_custom_command(TARGET ${main_exe} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E
+            rename $<TARGET_FILE_DIR:${main_exe}>/LICENSE
+                   $<TARGET_FILE_DIR:${main_exe}>/licenses/${project_name}.txt)
+
+    # Create the zip file.
+    set(PACKAGE_FILES ${WIN32_DLLS})
+    list(TRANSFORM PACKAGE_FILES REPLACE ".*/" "")  # Strip paths from DLL filenames
+    list(PREPEND PACKAGE_FILES "${main_exe}.exe")
+    list(APPEND PACKAGE_FILES "licenses")
+    list(TRANSFORM PACKAGE_FILES PREPEND "$<TARGET_FILE_DIR:${main_exe}>/")
+    add_custom_command(TARGET ${main_exe} POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E
+          tar "cfv" "${project_name}_windows-x64.zip" --format=zip ${PACKAGE_FILES}
+      COMMENT "Creating .zip file.")
+  endif()
 endif()

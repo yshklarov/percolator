@@ -12,6 +12,16 @@ Screenshots
 ![screenshot 1](screenshots/screenshot_2.png)
 
 
+Installing
+----------
+
+Percolator runs on Windows and Linux.
+
+For Linux, see the building procedure below.
+
+Windows binaries are [available here](https://yakov.shklarov.com/percolator/). You'll need to install the [Microsoft Visual C++ runtime libraries](https://support.microsoft.com/en-us/help/2977003/the-latest-supported-visual-c-downloads) if you don't have them already installed -- you'll want the newest version, vc_redist.x64.exe.
+
+
 Building
 --------
 
@@ -22,8 +32,9 @@ straightforward to get Percolator to build on your system.
 **Linux**: Install CMake, SDL2, and GLEW (if you're on debian: packages cmake, libsdl2-dev, and
 libglew-dev). Then use the standard CMake build procedure. For example:
 
-    $ mkdir build
-    $ cd build
+    $ git clone git@github.com:yshklarov/percolator.git
+    $ mkdir percolator/build
+    $ cd percolator/build
     $ cmake ..
     $ cmake --build . -v -j8
     $ ./percolator
