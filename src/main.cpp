@@ -347,17 +347,35 @@ int main(int, char**) {
       if (io.ConfigFlags & ImGuiConfigFlags_DockingEnable) {
         ImGuiID dockspace_id = ImGui::GetID("DockSpace");
         ImGui::DockSpace(dockspace_id, ImVec2(0.0F, 0.0F), dockspace_flags);
+
+        // Initial window layout
+        static bool first_time {true};
+        if (first_time) {
+          first_time = false;
+          auto viewport_size = viewport->GetWorkSize();
+          ImGui::DockBuilderRemoveNode(dockspace_id); // Clear out existing layout
+          ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace); // Add empty node
+          ImGui::DockBuilderSetNodeSize(dockspace_id, viewport_size); // Necessary: See imgui_internal.h
+
+          // Try to set up a square Lattice window.
+          float split_ratio = std::max(0.20f, (viewport_size.x - viewport_size.y) / viewport_size.x);
+          ImGuiID left;
+          ImGuiID right;
+          ImGui::DockBuilderSplitNode(dockspace_id, ImGuiDir_Left, split_ratio, &left, &right);
+          ImGui::DockBuilderDockWindow("Control", left);
+          ImGui::DockBuilderDockWindow("Lattice", right);
+
+          ImGui::DockBuilderFinish(dockspace_id);
+        }
       } else {
         ImGui::Text("ERROR: Docking is not enabled!");
       }
-          
+
       ImGui::End();  // DockSpace
     }
 
     // Control window
     {
-      ImGui::SetNextWindowPos(ImVec2(work_pos.x + 50, work_pos.y + 50), ImGuiCond_FirstUseEver);
-      ImGui::SetNextWindowSize(ImVec2(400, 400), ImGuiCond_FirstUseEver);
       if (ImGui::Begin("Control")) {
         // Leave room for line(s) below us
         ImGui::BeginChild("main config", ImVec2(0, - 2 * ImGui::GetFrameHeightWithSpacing()));
@@ -579,8 +597,6 @@ int main(int, char**) {
 
     // Lattice window
     if (show_lattice_window) {
-      ImGui::SetNextWindowPos(ImVec2(work_pos.x + 500, work_pos.y + 50), ImGuiCond_FirstUseEver);
-      ImGui::SetNextWindowSize(ImVec2(600, 600), ImGuiCond_FirstUseEver);
       ImGui::Begin("Lattice", &show_lattice_window);
       Latticeview(&lattice, redraw);
       redraw = false;
