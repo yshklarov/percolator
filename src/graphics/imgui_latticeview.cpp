@@ -18,21 +18,29 @@ bool make_gl_texture_from_lattice(const Lattice* data, GLuint* out_texture) {
   int width {data->get_width()};
   int height {data->get_height()};
 
-  // Create a OpenGL texture identifier.
-  GLuint texture;
-  glGenTextures(1, &texture);
-  glBindTexture(GL_TEXTURE_2D, texture);
-
-  // Set up filtering parameters for display.
-  // This may look backwards, but it's correct: We need nearest-neighbour (GL_NEAREST) when blowing
-  // up because we want big pixels to show up as squares, and we want interpolation (GL_LINEAR)
-  // when shrinking a texture to fit, so that it looks nicer. Speed isn't an issue here.
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  // Textures can be very large: No point in reallocating unless the size has changed.
+  static auto must_reallocate {true};
+  static thread_local int texture_data_width {0}, texture_data_height {0};
+  static thread_local uint32_t* texture_data {nullptr};
+  if (width != texture_data_width or
+      height != texture_data_height) {
+    must_reallocate = true;
+  }
+  if (must_reallocate) {
+    if (texture_data != nullptr) {
+      delete[] texture_data;
+    }
+    // TODO how do we have multiple LatticeViews in the same thread? LatticeView should be
+    // encapsulated in a class, with a destructor to free texture_data. Get rid of this
+    // "thread_local" nonsense.
+    texture_data = new uint32_t[width * height] {};
+    texture_data_width = width;
+    texture_data_height = height;
+  }
 
   // Draw pixels into texture.
-  glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-  uint32_t* texture_data = new uint32_t[width * height] {};
+  // TODO only redraw what's changed.
+  // TODO don't use OpenGL to scale down giant textures: It's buggy and slow for huge textures.
   constexpr auto grey = 0x202020FF;
   constexpr auto blue = 0x004CFFFF;
   constexpr auto cyan = 0x2CCDFFFF;
@@ -40,25 +48,53 @@ bool make_gl_texture_from_lattice(const Lattice* data, GLuint* out_texture) {
   constexpr auto white = 0xFFFFFFFF;
   for (auto y {0}; y < height; ++y) {
     for (auto x {0}; x < width; ++x) {
-      auto site_color {grey};
-      if (data->is_freshly_flooded(x, y)) {
-        site_color = cyan;
-      } else if (data->is_flooded(x, y)) {
-        site_color = blue;
-      } else if (data->is_open(x, y)) {
+      auto site_color {white};
+      switch (data->site_status(x, y)) {
+      case SiteStatus::open:
         site_color = white;
+        break;
+      case SiteStatus::closed:
+        site_color = grey;
+        break;
+      case SiteStatus::flooded:
+        site_color = blue;
+        break;
+      case SiteStatus::freshly_flooded:
+        site_color = cyan;
+        break;
+      default:
+        IM_ASSERT(false);
+        break;
       }
       texture_data[y*width + x] = site_color;
     }
   }
-    
+
+  static GLuint texture {0};  // OpenGL texture identifier
+  if (must_reallocate) {
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+
+    // Set up filtering parameters for display.
+    // This may look backwards, but it's correct: We need nearest-neighbour (GL_NEAREST) when blowing
+    // up because we want big pixels to show up as squares, and we want interpolation (GL_LINEAR)
+    // when shrinking a texture to fit, so that it looks nicer. Speed isn't an issue here.
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+  }
+
   // TODO When the lattice is very large (10,000 x 10,000), we can get artefacts. Maybe
   // manually downsample texture_data before sending it to glTexImage2D.
   // TODO When downsampling, we can get a Moire pattern. So do our own interpolation instead.
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8, texture_data);
-  delete[] texture_data;
-
-  glDeleteTextures(1, out_texture);   // Free old texture explicitly to fix animation jitter.
+  if (must_reallocate) {
+    // Free old texture explicitly to fix animation jitter. "glDeleteTextures silently ignores 0's
+    // and names that do not correspond to existing textures." -- OpenGL docs
+    glDeleteTextures(1, out_texture);
+    must_reallocate = false;
+  }
   *out_texture = texture;
 
   return true;

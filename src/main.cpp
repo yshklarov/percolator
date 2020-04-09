@@ -1,5 +1,6 @@
 #include <chrono>
 #include <iostream>
+#include <string>
 #include <SDL.h>
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"
@@ -202,6 +203,7 @@ int main(int, char**) {
   const float rect_site_percolation_threshold {0.59274605};
   float open_p {rect_site_percolation_threshold};
   regenerate_lattice(lattice, probability_measure, open_p);
+  auto auto_percolate {false};
   auto regeneration_was_requested {false};
   auto percolation_was_requested {false};
   auto percolation_step_was_requested {false};
@@ -266,6 +268,26 @@ int main(int, char**) {
             &show_about_window,
             ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("Percolator");
+
+        // Clickable URL.
+        // TODO: Move this to a helper function; open link in a web browser window.
+        const std::string project_url {"https://github.com/yshklarov/percolator"};
+        static auto project_url_clicked {false};
+        ImGui::Text("%s", project_url.c_str());
+        if (ImGui::IsItemClicked()) {
+          ImGui::SetClipboardText(project_url.c_str());
+          project_url_clicked = true;
+        }
+        if (ImGui::IsItemHovered()) {
+          const int CURSOR_HAND {7};
+          ImGui::SetMouseCursor(CURSOR_HAND);
+          if (project_url_clicked) {
+            ImGui::SetTooltip("Copied URL to clipboard");
+          }
+        } else {  // Hide tooltip when mouse cursor leaves.
+          project_url_clicked = false;
+        }
+
         ImGui::Separator();
         ImGui::Text("By Yakov Shklarov and 8.5tails");
         if (ImGui::Button("Close", ImVec2(100, 0))) {
@@ -341,7 +363,7 @@ int main(int, char**) {
         if (ImGui::CollapsingHeader("Lattice")) {
           // TODO Known bug: If resizing takes a long time and user clicks somewhere else in the
           // meantime, the slider moves to the horizontal position of the new click. To fix it:
-          // Never do long computations in the GUI thread,
+          // Never do long computations in the GUI thread.
 
           const int min_size = 1, max_size = 8000;
           const float min_size_f = min_size, max_size_f = max_size;
@@ -406,11 +428,6 @@ int main(int, char**) {
               // Choices: Xorshift32, PCG, ...?
               regeneration_was_requested = true;
             }
-            ImGui::SameLine();
-            if (ImGui::Button("Randomize & percolate")) {
-              regeneration_was_requested = true;
-              percolation_was_requested = true;
-            }
           }
           ImGui::Spacing();
           ImGui::Spacing();
@@ -418,16 +435,26 @@ int main(int, char**) {
 
         ImGui::SetNextTreeNodeOpen(true, ImGuiCond_FirstUseEver);
         if (ImGui::CollapsingHeader("Percolation")) {
-          if (lattice.fully_flooded()) {
+          if (lattice.is_fully_flooded() or auto_percolate) {
             begin_disable_items();
             ImGui::Button("Percolate!");
             end_disable_items();
           } else if (ImGui::Button("Percolate!")) {
             percolation_was_requested = true;
           }
+          ImGui::SameLine();
+          if (ImGui::Button("Clear")) {
+            lattice.unflood();
+            redraw = true;
+            auto_percolate = false;
+          }
+          ImGui::SameLine();
+          if (ImGui::Checkbox("Auto-percolate", &auto_percolate) and auto_percolate) {
+            percolation_was_requested = true;
+          }
 
           if (!flowing) {
-            if (lattice.fully_flooded()) {
+            if (lattice.is_fully_flooded() or auto_percolate) {
               begin_disable_items();
               ImGui::Button("Begin flow");
               end_disable_items();
@@ -439,7 +466,7 @@ int main(int, char**) {
           }
 
           ImGui::SameLine();
-          if (lattice.fully_flooded()) {
+          if (lattice.is_fully_flooded() or auto_percolate) {
             begin_disable_items();
             ImGui::Button("Single step");
             end_disable_items();
@@ -475,7 +502,7 @@ int main(int, char**) {
       if (regeneration_was_requested) {
         regenerate_lattice(lattice, probability_measure, open_p);
       }
-      if (percolation_was_requested) {
+      if (percolation_was_requested or auto_percolate) {
         lattice.percolate();
       }
       if (percolation_step_was_requested) {
@@ -512,7 +539,7 @@ int main(int, char**) {
         while (i < steps) {
           lattice.percolate_step();
           ++i;
-          if (lattice.fully_flooded()) {
+          if (lattice.is_fully_flooded()) {
             flowing = false;
             break;
           }

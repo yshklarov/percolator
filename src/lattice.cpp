@@ -7,6 +7,7 @@
 // Xorshift: Fast RNG. Copied from <https://en.wikipedia.org/wiki/Xorshift>.
 uint32_t xorshift32() {
 	// Algorithm "xor" from p. 4 of Marsaglia, "Xorshift RNGs"
+  // TODO Seed with system clock.
 	static uint32_t state {1};  // Must be initialized to nonzero.
 	state ^= state << 13;
 	state ^= state >> 17;
@@ -63,13 +64,24 @@ void Lattice::fill_pattern(Pattern pattern) {
     status_of = [](int x, int y) { return SiteStatus::open; };
     break;
   default:  // Really shouldn't happen.
-    // TODO Log an error.
+    // TODO Log an error
     status_of = [](int x, int y) { return SiteStatus::closed; };
     break;
   }
   for (auto y {0}; y < grid_height; ++y) {
     for (auto x {0}; x < grid_width; ++x) {
       grid[y * grid_width + x] = status_of(x, y);
+    }
+  }
+  freshly_flooded.clear();
+  begun_flooding = false;
+}
+
+void Lattice::unflood() {
+  for (auto i {0}; i < grid_width * grid_height; ++i) {
+    if (grid[i] == SiteStatus::flooded or
+        grid[i] == SiteStatus::freshly_flooded) {
+      grid[i] = SiteStatus::open;
     }
   }
   freshly_flooded.clear();

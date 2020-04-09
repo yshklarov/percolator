@@ -3,10 +3,6 @@ Percolator
 
 Percolator is a tool for running simulations of [percolation](https://en.wikipedia.org/wiki/Percolation_theory) on a planar lattice. Currently it only does site percolation on the square lattice.
 
-Features
---------
-
-  * Not much so far. Check back soon!
 
 Screenshots
 -----------
@@ -15,9 +11,6 @@ Screenshots
 
 ![screenshot 1](screenshots/screenshot_2.png)
 
-Usage
------
-  * (TODO)
 
 Building
 --------
@@ -26,14 +19,12 @@ Requirements: Percolator uses [ImGui](https://github.com/ocornut/imgui) for the 
 interface. ImGui supports many platforms and graphics backends, so it should be relatively
 straightforward to get Percolator to build on your system.
 
-**Linux**:
+**Linux**: Install SDL2, GLEW, and CMake. Then use the standard CMake build procedure, for example:
 
     $ mkdir build
     $ cd build
     $ cmake ..
-    $ cmake --build . -v
+    $ cmake --build . -v -j8
     $ ./percolator
 
-**Windows**: We use CMake. Load the CMakeLists.txt file in any IDE that supports CMake (e.g., Visual Studio or Qt Creator). The Windows build doesn't work yet, sorry!!
-
-**OS X**: You are entirely on your own. You might try to port Percolator to ImGui's sdl_metal backend.
+**Windows**: Load the ```CMakeLists.txt``` file in any IDE that supports CMake (e.g., Visual Studio or Qt Creator). But the Windows build doesn't work yet, sorry!!

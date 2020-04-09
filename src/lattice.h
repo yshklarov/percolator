@@ -48,9 +48,13 @@ public:
     // This is *much* faster than searching the vector freshly_flooded.
     return grid_get(x,y) == SiteStatus::freshly_flooded;
   }
+
+  SiteStatus site_status(int x, int y) const {
+    return grid_get(x,y);
+  }
   
-  bool fully_flooded() {
-    return begun_flooding && freshly_flooded.empty();
+  bool is_fully_flooded() {
+    return begun_flooding and freshly_flooded.empty();
   }
 
   void resize(const int width, const int height);
@@ -59,6 +63,7 @@ public:
   int get_height () const { return grid_height; }
 
   void fill_pattern(Pattern pattern);
+  void unflood();
   void randomize_bernoulli(double p = 0.5);
   void percolate();
   bool percolate_step();
