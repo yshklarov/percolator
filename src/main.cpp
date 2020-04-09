@@ -206,6 +206,7 @@ int main(int, char**) {
   float open_p {rect_site_percolation_threshold};
   regenerate_lattice(lattice, probability_measure, open_p);
   auto auto_percolate {false};
+  auto auto_flow {false};
   auto regeneration_was_requested {false};
   auto percolation_was_requested {false};
   auto percolation_step_was_requested {false};
@@ -356,7 +357,7 @@ int main(int, char**) {
     // Control window
     {
       ImGui::SetNextWindowPos(ImVec2(work_pos.x + 50, work_pos.y + 50), ImGuiCond_FirstUseEver);
-      ImGui::SetNextWindowSize(ImVec2(600, 350), ImGuiCond_FirstUseEver);
+      ImGui::SetNextWindowSize(ImVec2(400, 400), ImGuiCond_FirstUseEver);
       if (ImGui::Begin("Control")) {
         // Leave room for line(s) below us
         ImGui::BeginChild("main config", ImVec2(0, - 2 * ImGui::GetFrameHeightWithSpacing()));
@@ -449,13 +450,23 @@ int main(int, char**) {
             lattice.unflood();
             redraw = true;
             auto_percolate = false;
+            if (auto_flow) {
+              // TODO Find a more elegant way to deal with auto_flow.
+              flow_was_requested = true;
+            }
           }
           ImGui::SameLine();
           if (ImGui::Checkbox("Auto-percolate", &auto_percolate) and auto_percolate) {
             percolation_was_requested = true;
+            auto_flow = false;  // It makes no sense to have both at once.
+            flowing = false;
           }
 
-          if (!flowing) {
+          if (auto_flow) {
+            begin_disable_items();
+            ImGui::Button("Pause flow");
+            end_disable_items();
+          } else if (!flowing) {
             if (lattice.is_fully_flooded() or auto_percolate) {
               begin_disable_items();
               ImGui::Button("Begin flow");
@@ -468,12 +479,22 @@ int main(int, char**) {
           }
 
           ImGui::SameLine();
-          if (lattice.is_fully_flooded() or auto_percolate) {
+          if (lattice.is_fully_flooded() or auto_percolate or auto_flow) {
             begin_disable_items();
             ImGui::Button("Single step");
             end_disable_items();
           } else if (ImGui::Button("Single step")) {
             percolation_step_was_requested = true;
+          }
+
+          ImGui::SameLine();
+          if (ImGui::Checkbox("Auto-flow", &auto_flow)) {
+            if (auto_flow) {
+              auto_percolate = false;  // It makes no sense to have both at once.
+              flow_was_requested = true;
+            } else {
+              flowing = false;
+            }
           }
 
           static const float min_speed = 1.0F;
@@ -503,6 +524,11 @@ int main(int, char**) {
 
       if (regeneration_was_requested) {
         regenerate_lattice(lattice, probability_measure, open_p);
+        if (auto_flow) {
+          flow_was_requested = true;
+        } else {
+          flowing = false;
+        }
       }
       if (percolation_was_requested or auto_percolate) {
         lattice.percolate();
@@ -513,7 +539,6 @@ int main(int, char**) {
       if (regeneration_was_requested or
           percolation_was_requested or
           percolation_step_was_requested) {
-        flowing = false;
         // We must redraw even if lattice.percolate_step() returned false, because freshly_flooded
         // may have changed.
         redraw = true;
@@ -530,7 +555,7 @@ int main(int, char**) {
         redraw = true;
       }
 
-      if (flowing) {
+      if (flowing and not lattice.is_fully_flooded()) {
         auto now = std::chrono::high_resolution_clock::now();
         std::chrono::microseconds delay{static_cast<int>(1'000'000.F / flow_speed)};
         const int steps = (now - flow_start_time) / delay;
@@ -542,7 +567,9 @@ int main(int, char**) {
           lattice.percolate_step();
           ++i;
           if (lattice.is_fully_flooded()) {
-            flowing = false;
+            if (!auto_flow) {
+              flowing = false;
+            }
             break;
           }
         }
@@ -552,7 +579,7 @@ int main(int, char**) {
 
     // Lattice window
     if (show_lattice_window) {
-      ImGui::SetNextWindowPos(ImVec2(work_pos.x + 700, work_pos.y + 50), ImGuiCond_FirstUseEver);
+      ImGui::SetNextWindowPos(ImVec2(work_pos.x + 500, work_pos.y + 50), ImGuiCond_FirstUseEver);
       ImGui::SetNextWindowSize(ImVec2(600, 600), ImGuiCond_FirstUseEver);
       ImGui::Begin("Lattice", &show_lattice_window);
       Latticeview(&lattice, redraw);
