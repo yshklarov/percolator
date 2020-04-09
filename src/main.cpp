@@ -459,7 +459,6 @@ int main(int, char**) {
           if (ImGui::Checkbox("Auto-percolate", &auto_percolate) and auto_percolate) {
             percolation_was_requested = true;
             auto_flow = false;  // It makes no sense to have both at once.
-            flowing = false;
           }
 
           if (auto_flow) {
@@ -531,6 +530,7 @@ int main(int, char**) {
         }
       }
       if (percolation_was_requested or auto_percolate) {
+        flowing = false;
         lattice.percolate();
       }
       if (percolation_step_was_requested) {

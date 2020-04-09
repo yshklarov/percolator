@@ -114,7 +114,8 @@ void Latticeview(const Lattice* data, bool redraw) {
   const int image_height {data->get_height()};
 
   if (redraw) {
-    IM_ASSERT(make_gl_texture_from_lattice(data, &image_texture));
+    auto made_texture {make_gl_texture_from_lattice(data, &image_texture)};
+    IM_ASSERT(made_texture);
   }
   IM_ASSERT(glIsTexture(image_texture));
 
