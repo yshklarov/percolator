@@ -24,22 +24,24 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     "RelWithDebInfo")
 endif()
 
+# For special features disabled in the release build.
+# In code, put "#ifdef DEVEL_BUILD <...> #endif".
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEVEL_FEATURES")
+
 
 ################
 # Compilation and tools
-
-if(UNIX)
-  SET(CMAKE_C_COMPILER clang)
-  SET(CMAKE_CXX_COMPILER clang++)
-endif()
-
-# If we comment out this line, then the build works but the lattice doesn't display. Why?!
-set(CMAKE_CXX_FLAGS_RELEASE "")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 set(CMAKE_CXX_EXTENSIONS NO)
 
+if(UNIX)
+  SET(CMAKE_C_COMPILER clang)
+  SET(CMAKE_CXX_COMPILER clang++)
+  #SET(CMAKE_C_COMPILER gcc)
+  #SET(CMAKE_CXX_COMPILER g++)
+endif()
 
 if(UNIX)
   option(ENABLE_CCACHE
@@ -93,6 +95,24 @@ if(ENABLE_CLANG_TIDY)
 endif()
 
 
+################
+# Compiler warnings, setup, etc.
+
+# Per-compiler warning flags, and other settings.
+# TODO Warnings only for our own code (not libraries in extern/); add more warnings.
+if ( CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang|GNU" )
+  set(compiler_warning_flags -Wall -Wextra -Wunreachable-code -Wpedantic -Wshadow -Wformat)
+  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g")
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")  # Optimize for speed.
+endif()
+if ( CMAKE_CXX_COMPILER_ID MATCHES "Clang" )
+  list(APPEND compiler_warning_flags "-Wweak-vtables -Wexit-time-destructors -Wglobal-constructors -Wmissing-noreturn")
+endif()
+if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+  set(CMAKE_CXX_FLAGS "/W3 /permissive-")
+  # Statically link the MSVC runtime library. This must be set *before* defining compile targets.
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 
 
 ################
@@ -111,6 +131,7 @@ if(WIN32)
     link_directories("extern/windows/SDL2-2.0.12/lib/x64")
     link_directories("extern/windows/glew-2.1.0/lib/Release/x64")
 endif()
+
 
 ################
 # External libraries
@@ -138,7 +159,6 @@ target_link_libraries(imgui_demo PRIVATE imgui_draw)
 # Disable static analysis for external libraries.
 set_target_properties(imgui imgui_draw imgui_widgets imgui_impl_sdl imgui_impl_opengl3 imgui_demo
   PROPERTIES CXX_CLANG_TIDY "")
-
 
 
 ################
@@ -174,25 +194,11 @@ target_link_libraries(
   lattice imgui_latticeview
   imgui imgui_widgets imgui_impl_sdl imgui_impl_opengl3 imgui_demo
   ${PLATFORM_LINK_LIBS})
+target_compile_options( ${main_exe} PUBLIC ${compiler_warning_flags} )
 
 
 ################
-# Compiler warnings, setup, etc.
-
-# Per-compiler warning flags, and other settings.
-# TODO Warnings only for our own code (not libraries in extern/); add more warnings.
-if ( CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang|GNU" )
-  target_compile_options( ${main_exe} PUBLIC -Wall -Wextra -Wunreachable-code -Wpedantic -Wshadow -Wformat)
-  set(CMAKE_CXX_FLAGS_DEBUG "-g")
-  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")  # Optimize for speed.
-endif()
-if ( CMAKE_CXX_COMPILER_ID MATCHES "Clang" )
-  target_compile_options( ${main_exe} PUBLIC
-    -Wweak-vtables -Wexit-time-destructors -Wglobal-constructors -Wmissing-noreturn )
-endif()
-if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
-  set(CMAKE_CXX_FLAGS "/W3 /O2 /permissive-")
-endif()
+# Installation
 
 # Copy resources into build. (We have no resources so far.)
 #add_custom_command(TARGET ${main_exe} POST_BUILD

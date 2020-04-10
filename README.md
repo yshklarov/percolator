@@ -19,7 +19,7 @@ Percolator runs on Windows and Linux.
 
 For Linux, see the building procedure below.
 
-Windows binaries are [available here](https://yakov.shklarov.com/percolator/). You'll need to install the [Microsoft Visual C++ runtime libraries](https://support.microsoft.com/en-us/help/2977003/the-latest-supported-visual-c-downloads) if you don't have them already installed -- you'll want the newest version, vc_redist.x64.exe.
+Windows binaries are [available here](https://yakov.shklarov.com/percolator/).
 
 
 Building

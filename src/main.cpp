@@ -546,9 +546,9 @@ int main(int, char**) {
         ImGui::EndChild();
 
         ImGui::Checkbox("Lattice viewport", &show_lattice_window);
-        // TODO Only enable for "Devel" build type (with CMake: how?)
-        //ImGui::SameLine();
-        //ImGui::Checkbox("Demo Window", &show_demo_window);
+#ifdef DEVEL_FEATURES
+        ImGui::SameLine(); ImGui::Checkbox("Demo Window", &show_demo_window);
+#endif
         ImGui::Text("GUI framerate: %.3f ms/frame (%.1f FPS)",
                     1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
       }
