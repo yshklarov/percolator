@@ -129,13 +129,17 @@ int main(int, char**) {
 
   // Set up ImGui context
   IMGUI_CHECKVERSION();
-  ImGui::CreateContext();
+  auto context {ImGui::CreateContext()};
   ImGuiIO& io = ImGui::GetIO(); (void)io;
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Keyboard Controls
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;      // Docking
   // ImGui multi-viewport / platform windows are still too buggy, so we'll leave this disabled.
   //io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
   //io.ConfigViewportsNoTaskBarIcon = true;
+
+  // Override imgui's defaults "imgui.ini" and "imgui_log.ini".
+  io.IniFilename = "percolator.ini";
+  io.LogFilename = "percolator_log.ini";
 
   // Built-in themes
   //ImGui::StyleColorsClassic();
@@ -300,24 +304,27 @@ int main(int, char**) {
         // Initial window layout
         static bool first_time {true};
         if (first_time) {
-          auto viewport_size = viewport->GetWorkSize();
+          auto viewport_size {viewport->GetWorkSize()};
           // Workaround for tiling window managers: If the viewport size is 0, then the window
           // manager must be doing something weird, so we'll wait till the next frame.
           if (viewport_size.x != 0) {
             first_time = false;
-            ImGui::DockBuilderRemoveNode(dockspace_id); // Clear out existing layout
-            ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace); // Add empty node
-            ImGui::DockBuilderSetNodeSize(dockspace_id, viewport_size); // Necessary: See imgui_internal.h
+            // Only set up the layout if there aren't already saved layout settings.
+            if (context->SettingsWindows.empty()) {
+              ImGui::DockBuilderRemoveNode(dockspace_id); // Clear out existing layout
+              ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace); // Add empty node
+              ImGui::DockBuilderSetNodeSize(dockspace_id, viewport_size); // Necessary: See imgui_internal.h
 
-            // Make the Lattice window square, if possible.
-            float split_ratio = std::max(0.20f, (viewport_size.x - viewport_size.y) / viewport_size.x);
-            ImGuiID left;
-            ImGuiID right;
-            ImGui::DockBuilderSplitNode(dockspace_id, ImGuiDir_Left, split_ratio, &left, &right);
-            ImGui::DockBuilderDockWindow("Control", left);
-            ImGui::DockBuilderDockWindow("Lattice", right);
+              // Make the Lattice window square, if possible.
+              float split_ratio = std::max(0.20f, (viewport_size.x - viewport_size.y) / viewport_size.x);
+              ImGuiID left;
+              ImGuiID right;
+              ImGui::DockBuilderSplitNode(dockspace_id, ImGuiDir_Right, 1.0F - split_ratio, &right, &left);
+              ImGui::DockBuilderDockWindow("Control", left);
+              ImGui::DockBuilderDockWindow("Lattice", right);
 
-            ImGui::DockBuilderFinish(dockspace_id);
+              ImGui::DockBuilderFinish(dockspace_id);
+            }
           }
         }
       } else {
