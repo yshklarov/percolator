@@ -25,10 +25,6 @@ Windows binaries are [available here](https://yakov.shklarov.com/percolator/).
 Building
 --------
 
-Requirements: Percolator uses [ImGui](https://github.com/ocornut/imgui) for the user
-interface. ImGui supports many platforms and graphics backends, so it should be relatively
-straightforward to get Percolator to build on your system.
-
 **Linux**: Install CMake, SDL2, and GLEW (if you're on debian: packages cmake, libsdl2-dev, and
 libglew-dev). Then use the standard CMake build procedure. For example:
 
@@ -41,3 +37,7 @@ libglew-dev). Then use the standard CMake build procedure. For example:
 
 **Windows**: Load the folder as a CMake project in you favorite IDE. All external includes and
 libraries are already in the source tree. The build has been tested with MSVC on Visual Studio.
+
+**Other platforms**: Percolator uses [ImGui](https://github.com/ocornut/imgui) for the user
+interface. ImGui supports many different platforms and graphics backends, so it should be
+relatively straightforward to get Percolator to build on your system.

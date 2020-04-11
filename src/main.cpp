@@ -183,8 +183,9 @@ int main(int, char**) {
   ImGuiIO& io = ImGui::GetIO(); (void)io;
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Keyboard Controls
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;      // Docking
-  io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;    // Multi-viewport / platform windows
-  io.ConfigViewportsNoTaskBarIcon = true;
+  // ImGui viewports are still too buggy, so we'll leave this disabled.
+  //io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;    // Multi-viewport / platform windows
+  //io.ConfigViewportsNoTaskBarIcon = true;
 
   // Built-in themes
   //ImGui::StyleColorsClassic();
@@ -193,8 +194,8 @@ int main(int, char**) {
 
   // When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look
   // identical to regular ones.
-  ImGuiStyle& style = ImGui::GetStyle();
   if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+    ImGuiStyle& style {ImGui::GetStyle()};
     style.WindowRounding = 0.0F;
     style.FrameRounding = 3.0F;
     style.FrameBorderSize = 1.0F;  // Show border around widgets for better clarity
@@ -317,13 +318,13 @@ int main(int, char**) {
 
     // Root window (DockSpace)
     {
-      const auto opt_fullscreen {true};
+      const auto dockspace_fullscreen {true};
       const auto dockspace_flags {ImGuiDockNodeFlags_None};
 
       // We are using the ImGuiWindowFlags_NoDocking flag to make the parent window not dockable
       // into, because it would be confusing to have two docking targets within each others.
       ImGuiWindowFlags imgui_window_flags {ImGuiWindowFlags_NoDocking};
-      if (opt_fullscreen) {
+      if (dockspace_fullscreen) {
         ImGui::SetNextWindowPos(work_pos);
         ImGui::SetNextWindowSize(viewport->GetWorkSize());
         ImGui::SetNextWindowViewport(viewport->ID);
@@ -355,8 +356,8 @@ int main(int, char**) {
       ImGui::Begin("DockSpace", nullptr, imgui_window_flags);
       ImGui::PopStyleVar();
 
-      if (opt_fullscreen) {
-        ImGui::PopStyleVar(2);  // Back to normal WindowRounding  and WindowBorderSize.
+      if (dockspace_fullscreen) {
+        ImGui::PopStyleVar(2);  // Back to normal WindowRounding and WindowBorderSize.
       }
 
       if (io.ConfigFlags & ImGuiConfigFlags_DockingEnable) {
@@ -366,21 +367,25 @@ int main(int, char**) {
         // Initial window layout
         static bool first_time {true};
         if (first_time) {
-          first_time = false;
           auto viewport_size = viewport->GetWorkSize();
-          ImGui::DockBuilderRemoveNode(dockspace_id); // Clear out existing layout
-          ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace); // Add empty node
-          ImGui::DockBuilderSetNodeSize(dockspace_id, viewport_size); // Necessary: See imgui_internal.h
+          // Workaround for tiling window managers: If the viewport size is 0, then the window
+          // manager must be doing something weird, so we'll wait till the next frame.
+          if (viewport_size.x != 0) {
+            first_time = false;
+            ImGui::DockBuilderRemoveNode(dockspace_id); // Clear out existing layout
+            ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace); // Add empty node
+            ImGui::DockBuilderSetNodeSize(dockspace_id, viewport_size); // Necessary: See imgui_internal.h
 
-          // Try to set up a square Lattice window.
-          float split_ratio = std::max(0.20f, (viewport_size.x - viewport_size.y) / viewport_size.x);
-          ImGuiID left;
-          ImGuiID right;
-          ImGui::DockBuilderSplitNode(dockspace_id, ImGuiDir_Left, split_ratio, &left, &right);
-          ImGui::DockBuilderDockWindow("Control", left);
-          ImGui::DockBuilderDockWindow("Lattice", right);
+            // Make the Lattice window square, if possible.
+            float split_ratio = std::max(0.20f, (viewport_size.x - viewport_size.y) / viewport_size.x);
+            ImGuiID left;
+            ImGuiID right;
+            ImGui::DockBuilderSplitNode(dockspace_id, ImGuiDir_Left, split_ratio, &left, &right);
+            ImGui::DockBuilderDockWindow("Control", left);
+            ImGui::DockBuilderDockWindow("Lattice", right);
 
-          ImGui::DockBuilderFinish(dockspace_id);
+            ImGui::DockBuilderFinish(dockspace_id);
+          }
         }
       } else {
         ImGui::Text("ERROR: Docking is not enabled!");
