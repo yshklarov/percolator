@@ -55,7 +55,6 @@ void end_disable_items() {
 }
 
 static void show_menu_file(GLFWwindow* window) {
-  // TODO Set up keyboard shortcut
   if (ImGui::MenuItem("Quit", "Ctrl+Q")) {
     glfwSetWindowShouldClose(window, GLFW_TRUE);
   }
@@ -83,17 +82,24 @@ void regenerate_lattice(Lattice &lattice, const ProbabilityMeasure measure, cons
   }
 }
 
-void glfw_key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-  if (key == GLFW_KEY_Q && action == GLFW_PRESS && (mods & GLFW_MOD_CONTROL)) {
+
+void handle_keyboard_input(GLFWwindow* window) {
+  // Ctrl-Q should work everywhere, even if ImGui wants to capture keyboard.
+  auto io {ImGui::GetIO()};
+  if (ImGui::IsKeyPressed('Q') && io.KeyCtrl) {
     glfwSetWindowShouldClose(window, GLFW_TRUE);
+  }
+  // If ImGui wants keyboard focus for itself (e.g. text input widget), then don't handle it here.
+  if (!io.WantCaptureKeyboard) {
+    // Handle other keys here.
   }
 }
 
 
 int main(int, char**) {
 #ifdef _WIN32
-  // TODO Once we set up logging, we'll have a proper Windows application. For now, we'll just
-  // hide the console window. Options: SW_HIDE, SW_MINIMIZE, ...
+  // TODO Set up a WinMain. For now, we'll just hide the console window.
+  // Options: SW_HIDE, SW_MINIMIZE, ...
   ShowWindow(GetConsoleWindow(), SW_HIDE);
 #endif
 
@@ -130,8 +136,10 @@ int main(int, char**) {
   // Set up ImGui context
   IMGUI_CHECKVERSION();
   auto context {ImGui::CreateContext()};
-  ImGuiIO& io = ImGui::GetIO(); (void)io;
-  io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Keyboard Controls
+  ImGuiIO& io {ImGui::GetIO()}; (void)io;
+
+  // Keyboard navigation. Note this means that io.WantCaptureKeyboard will always be true.
+  //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;      // Docking
   // ImGui multi-viewport / platform windows are still too buggy, so we'll leave this disabled.
   //io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
@@ -160,7 +168,6 @@ int main(int, char**) {
   ImGui_ImplGlfw_InitForOpenGL(window, true);
   ImGui_ImplOpenGL3_Init(glsl_version);
 
-
   // State variables
 #ifdef DEVEL_FEATURES
   auto show_demo_window {false};
@@ -188,13 +195,8 @@ int main(int, char**) {
   // Main loop
   while (!glfwWindowShouldClose(window)) {
     // Poll and handle events (inputs, window resize, etc.)
-    // TODO Play nicely with ImGui's keyboard/mouse capturing.
-    // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui wants to use your inputs.
-    // - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main application.
-    // - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to your main application.
-    // Generally you may always pass all inputs to dear imgui, and hide them from your application based on those two flags.
     glfwPollEvents();
-    glfwSetKeyCallback(window, glfw_key_callback);
+    handle_keyboard_input(window);
 
     // Start the ImGui frame
     ImGui_ImplOpenGL3_NewFrame();
