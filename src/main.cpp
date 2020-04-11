@@ -8,39 +8,22 @@
 #include <windows.h>
 #endif
 
-#include <SDL.h>
-#undef main  // SDL clobbers "main" on Windows.
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"
-#include "imgui/examples/imgui_impl_sdl.h"
+#include "imgui/examples/imgui_impl_glfw.h"
 #include "imgui/examples/imgui_impl_opengl3.h"
 
-// Desktop OpenGL function loader
-#if defined(IMGUI_IMPL_OPENGL_LOADER_GL3W)
-#include <GL/gl3w.h>            // Initialize with gl3wInit()
-#elif defined(IMGUI_IMPL_OPENGL_LOADER_GLEW)
-#include <GL/glew.h>            // Initialize with glewInit()
-#elif defined(IMGUI_IMPL_OPENGL_LOADER_GLAD)
-#include <glad/glad.h>          // Initialize with gladLoadGL()
-#elif defined(IMGUI_IMPL_OPENGL_LOADER_GLBINDING2)
-#define GLFW_INCLUDE_NONE       // GLFW including OpenGL headers causes ambiguity or multiple
-                                // definition errors.
-#include <glbinding/Binding.h>  // Initialize with glbinding::Binding::initialize()
-#include <glbinding/gl/gl.h>
-using namespace gl;
-#elif defined(IMGUI_IMPL_OPENGL_LOADER_GLBINDING3)
-#define GLFW_INCLUDE_NONE       // GLFW including OpenGL headers causes ambiguity or multiple
-                                // definition errors.
-#include <glbinding/glbinding.h>// Initialize with glbinding::initialize()
-#include <glbinding/gl/gl.h>
-using namespace gl;
-#else
-#include IMGUI_IMPL_OPENGL_LOADER_CUSTOM
-#endif
+#include <glad/glad.h>   // Desktop OpenGL function loader
+#include <GLFW/glfw3.h>  // OpenGL utility library
 
 
 #include "lattice.h"
 #include "graphics/imgui_latticeview.h"
+
+
+static void glfw_error_callback(int error, const char* description) {
+  std::cerr << "GLFW error " << error << ": " << description << std::endl;
+}
 
 
 // TODO Move the definition of ProbabilityMeasure to a separate header and source file.
@@ -71,12 +54,10 @@ void end_disable_items() {
   ImGui::PopItemFlag();
 }
 
-static void show_menu_file() {
+static void show_menu_file(GLFWwindow* window) {
   // TODO Set up keyboard shortcut
   if (ImGui::MenuItem("Quit", "Ctrl+Q")) {
-    SDL_Event sdlevent;
-    sdlevent.type = SDL_QUIT;
-    SDL_PushEvent(&sdlevent);
+    glfwSetWindowShouldClose(window, GLFW_TRUE);
   }
 }
 
@@ -102,6 +83,13 @@ void regenerate_lattice(Lattice &lattice, const ProbabilityMeasure measure, cons
   }
 }
 
+void glfw_key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+  if (key == GLFW_KEY_Q && action == GLFW_PRESS && (mods & GLFW_MOD_CONTROL)) {
+    glfwSetWindowShouldClose(window, GLFW_TRUE);
+  }
+}
+
+
 int main(int, char**) {
 #ifdef _WIN32
   // TODO Once we set up logging, we'll have a proper Windows application. For now, we'll just
@@ -109,71 +97,33 @@ int main(int, char**) {
   ShowWindow(GetConsoleWindow(), SW_HIDE);
 #endif
 
-  // Set up SDL
-  if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-    std::cerr << "Error: " << SDL_GetError() << '\n';
-    return -1;
+  // Set up GLFW window
+  glfwSetErrorCallback(glfw_error_callback);
+  if (!glfwInit()) {
+    std::cerr << "Failed to initialize GLFW!\n";
+    return 1;
   }
 
-  // Decide GL+GLSL versions
-#if __APPLE__
-  // GL 3.2 Core + GLSL 150
-  const char* glsl_version = "#version 150";
-  // SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG is always required on Mac
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
-#else
-  // GL 3.0 + GLSL 130
-  const char* glsl_version = "#version 130";
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
-#endif
+  // Set versions GL 3.3 + GLSL 330
+  const char* glsl_version = "#version 330";
+  // This *must* match the GLAD loader's version, or we get weird OpenGL exceptions.
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
+  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // 3.0+ only
 
   // Create window with graphics context
-  SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-  SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-  SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-  SDL_WindowFlags window_flags = (SDL_WindowFlags)(
-    SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
-  SDL_Window* window = SDL_CreateWindow(
-    "Percolator",
-    SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, window_flags);
-  SDL_GLContext gl_context = SDL_GL_CreateContext(window);
-  SDL_GL_MakeCurrent(window, gl_context);
-  // Try setting adaptive vsync; if it fails then set regular vsync.
-  if (SDL_GL_SetSwapInterval(-1) == -1) {
-    SDL_GL_SetSwapInterval(1);
+  GLFWwindow* window = glfwCreateWindow(1280, 720, "Percolator", NULL, NULL);
+  if (window == NULL) {
+    std::cerr << "GLFW failed to create window!\n";
+    return 1;
   }
+  glfwMakeContextCurrent(window);
+  glfwSwapInterval(1); // Enable vsync
 
   // Initialize OpenGL loader
-#if defined(IMGUI_IMPL_OPENGL_LOADER_GL3W)
-  bool err = gl3wInit() != 0;
-#elif defined(IMGUI_IMPL_OPENGL_LOADER_GLEW)
-  bool err = glewInit() != GLEW_OK;
-#elif defined(IMGUI_IMPL_OPENGL_LOADER_GLAD)
-  bool err = gladLoadGL() == 0;
-#elif defined(IMGUI_IMPL_OPENGL_LOADER_GLBINDING2)
-  bool err = false;
-  glbinding::Binding::initialize();
-#elif defined(IMGUI_IMPL_OPENGL_LOADER_GLBINDING3)
-  bool err = false;
-  glbinding::initialize(
-    [](const char* name) {
-      return (glbinding::ProcAddress)SDL_GL_GetProcAddress(name);
-    });
-#else
-  bool err = false; // If you use IMGUI_IMPL_OPENGL_LOADER_CUSTOM, your loader is likely to
-                    // requires some form of initialization.
-#endif
-  if (err) {
+  if (gladLoadGL() == 0) {
     std::cerr << "Failed to initialize OpenGL loader!\n";
-#if defined(IMGUI_IMPL_OPENGL_LOADER_GLEW)
-    std::cerr << glewGetErrorString(err) << '\n';
-#endif
     return 1;
   }
 
@@ -183,8 +133,8 @@ int main(int, char**) {
   ImGuiIO& io = ImGui::GetIO(); (void)io;
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Keyboard Controls
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;      // Docking
-  // ImGui viewports are still too buggy, so we'll leave this disabled.
-  //io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;    // Multi-viewport / platform windows
+  // ImGui multi-viewport / platform windows are still too buggy, so we'll leave this disabled.
+  //io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
   //io.ConfigViewportsNoTaskBarIcon = true;
 
   // Built-in themes
@@ -199,15 +149,18 @@ int main(int, char**) {
     style.WindowRounding = 0.0F;
     style.FrameRounding = 3.0F;
     style.FrameBorderSize = 1.0F;  // Show border around widgets for better clarity
-    style.Colors[ImGuiCol_WindowBg].w = 0.9F;  // Window background alpha (transparency)
+    style.Colors[ImGuiCol_WindowBg].w = 1.0F;  // Window background alpha (transparency)
   }
 
   // Set up platform/renderer bindings
-  ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
+  ImGui_ImplGlfw_InitForOpenGL(window, true);
   ImGui_ImplOpenGL3_Init(glsl_version);
 
+
   // State variables
+#ifdef DEVEL_FEATURES
   auto show_demo_window {false};
+#endif
   auto show_lattice_window {true};
   auto show_about_window {false};
   auto redraw {true};
@@ -229,49 +182,28 @@ int main(int, char**) {
   auto flow_was_requested {false};
 
   // Main loop
-  auto done {false};
-  while (!done) {
+  while (!glfwWindowShouldClose(window)) {
     // Poll and handle events (inputs, window resize, etc.)
-
-    // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui
-    // wants to use your inputs.
-    // - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main
-    //   application.
-    // - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to your main
-    //   application.
-    // Generally you may always pass all inputs to dear imgui, and hide them from your application
-    // based on those two flags.
-    SDL_Event event;
-    while (SDL_PollEvent(&event)) {
-      ImGui_ImplSDL2_ProcessEvent(&event);
-      if (event.type == SDL_QUIT) {
-        done = true;
-      }
-      // Window closed
-      if (event.type == SDL_WINDOWEVENT &&
-          event.window.event == SDL_WINDOWEVENT_CLOSE &&
-          event.window.windowID == SDL_GetWindowID(window)) {
-        done = true;
-      }
-      // Ctrl-Q
-      if (event.type == SDL_KEYDOWN &&
-          event.key.keysym.sym == SDLK_q &&
-          (SDL_GetModState() & KMOD_CTRL)) {
-        done = true;
-      }
-    }
+    // TODO Play nicely with ImGui's keyboard/mouse capturing.
+    // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui wants to use your inputs.
+    // - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main application.
+    // - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to your main application.
+    // Generally you may always pass all inputs to dear imgui, and hide them from your application based on those two flags.
+    glfwPollEvents();
+    glfwSetKeyCallback(window, glfw_key_callback);
 
     // Start the ImGui frame
     ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplSDL2_NewFrame(window);
+    ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
     auto viewport {ImGui::GetMainViewport()};
     auto work_pos {viewport->GetWorkPos()};
         
+    // Main menu
     if (ImGui::BeginMainMenuBar()) {
       if (ImGui::BeginMenu("File")) {
-        show_menu_file();
+        show_menu_file(window);
         ImGui::EndMenu();
       }
       if (ImGui::BeginMenu("Help")) {
@@ -281,6 +213,7 @@ int main(int, char**) {
       ImGui::EndMainMenuBar();
     }
 
+    // About window
     if (show_about_window) {
       if (ImGui::Begin(
             "About Percolator",
@@ -623,38 +556,42 @@ int main(int, char**) {
       ImGui::End();
     }  // Lattice window
 
+#ifdef DEVEL_FEATURES
     // Demo window (useful for development: picking out widgets.)
     if (show_demo_window) {
       ImGui::ShowDemoWindow(&show_demo_window);
     }
+#endif
 
     // Render
     ImGui::Render();
-    glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
+
+    int display_w, display_h;
+    glfwGetFramebufferSize(window, &display_w, &display_h);
+    glViewport(0, 0, display_w, display_h);
     glClearColor(clear_color.x, clear_color.y, clear_color.z, clear_color.w);
     glClear(GL_COLOR_BUFFER_BIT);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-    // Update and render additional platform windows.
+    // Update and Render additional Platform Windows (Platform functions may change the current
+    // OpenGL context, so we save/restore it to make it easier to paste this code elsewhere.)
     if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
-      SDL_Window* backup_current_window = SDL_GL_GetCurrentWindow();
-      SDL_GLContext backup_current_context = SDL_GL_GetCurrentContext();
+      GLFWwindow* backup_current_context = glfwGetCurrentContext();
       ImGui::UpdatePlatformWindows();
       ImGui::RenderPlatformWindowsDefault();
-      SDL_GL_MakeCurrent(backup_current_window, backup_current_context);
+      glfwMakeContextCurrent(backup_current_context);
     }
 
-    SDL_GL_SwapWindow(window);
+    glfwSwapBuffers(window);
   }
 
   // Clean up
   ImGui_ImplOpenGL3_Shutdown();
-  ImGui_ImplSDL2_Shutdown();
+  ImGui_ImplGlfw_Shutdown();
   ImGui::DestroyContext();
 
-  SDL_GL_DeleteContext(gl_context);
-  SDL_DestroyWindow(window);
-  SDL_Quit();
+  glfwDestroyWindow(window);
+  glfwTerminate();
 
   return 0;
 }

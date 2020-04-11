@@ -118,23 +118,30 @@ endif()
 ################
 # Libraries setup
 
+include_directories("extern/glad/include")
+
 if(UNIX)
-    include(FindPkgConfig)
-    pkg_search_module(SDL2 REQUIRED sdl2)
-    pkg_search_module(GLEW REQUIRED glew)
-    include_directories(${GLEW_INCLUDE_DIRS} ${SDL2_INCLUDE_DIRS})
+  include(FindPkgConfig)
+  pkg_search_module(GLFW REQUIRED glfw3)
+  include_directories(${GLFW_INCLUDE_DIRS})
 endif()
 
 if(WIN32)
-    include_directories("extern/windows/SDL2-2.0.12/include")
-    include_directories("extern/windows/glew-2.1.0/include")
-    link_directories("extern/windows/SDL2-2.0.12/lib/x64")
-    link_directories("extern/windows/glew-2.1.0/lib/Release/x64")
+  include_directories("extern/windows/glfw-3.3.2/include")
+  link_directories("extern/windows/glfw-3.3.2/lib")
 endif()
 
 
 ################
 # External libraries
+
+add_library(glad STATIC extern/glad/src/glad.c extern/glad/include/glad/glad.h)
+set_source_files_properties(extern/glad/src/glad.c PROPERTIES LANGUAGE CXX)
+target_include_directories(glad PRIVATE extern/glad/include/)
+set_target_properties(glad PROPERTIES LINKER_LANGUAGE CXX)
+if(UNIX)
+  target_link_libraries(glad PRIVATE dl)
+endif()
 
 add_library(imgui STATIC extern/imgui/imgui.cpp extern/imgui/imgui.h extern/imgui/imconfig.h)
 
@@ -143,23 +150,25 @@ add_library(imgui_draw STATIC
 
 add_library(imgui_widgets STATIC extern/imgui/imgui_widgets.cpp)
 
-add_library(imgui_impl_sdl STATIC
-  extern/imgui/examples/imgui_impl_sdl.cpp
-  extern/imgui/examples/imgui_impl_sdl.h)
-target_include_directories(imgui_impl_sdl PRIVATE extern/imgui/)
+add_library(imgui_impl_glfw STATIC
+  extern/imgui/examples/imgui_impl_glfw.cpp
+  extern/imgui/examples/imgui_impl_glfw.h)
+target_include_directories(imgui_impl_glfw PRIVATE extern/imgui/)
 
 add_library(imgui_impl_opengl3 STATIC
   extern/imgui/examples/imgui_impl_opengl3.cpp
   extern/imgui/examples/imgui_impl_opengl3.h)
 target_include_directories(imgui_impl_opengl3 PRIVATE extern/imgui/)
+target_compile_options(imgui_impl_opengl3 PRIVATE -DIMGUI_IMPL_OPENGL_LOADER_GLAD)
 
 add_library(imgui_demo STATIC extern/imgui/imgui_demo.cpp)
 target_link_libraries(imgui_demo PRIVATE imgui_draw)
 
 # Disable static analysis for external libraries.
-set_target_properties(imgui imgui_draw imgui_widgets imgui_impl_sdl imgui_impl_opengl3 imgui_demo
-  PROPERTIES CXX_CLANG_TIDY "")
-
+if(ENABLE_CLANG_TIDY)
+  set_target_properties(glad imgui imgui_draw imgui_widgets imgui_impl_glfw imgui_impl_opengl3 imgui_demo
+    PROPERTIES CXX_CLANG_TIDY "")
+endif()
 
 ################
 # This project
@@ -180,10 +189,10 @@ target_include_directories(imgui_latticeview PRIVATE extern/ src/)
 
 if(UNIX)
   set(PLATFORM_RESOURCES "")
-  set(PLATFORM_LINK_LIBS ${GLEW_LIBRARIES} ${SDL2_LIBRARIES})
+  set(PLATFORM_LINK_LIBS ${GLFW_LIBRARIES} GL)
 elseif(WIN32)
   set(PLATFORM_RESOURCES "${CMAKE_CURRENT_SOURCE_DIR}/res/windows.rc")
-  set(PLATFORM_LINK_LIBS OpenGL32 SDL2 glew32)
+  set(PLATFORM_LINK_LIBS OpenGL32 glfw3dll)
 endif()
 
 set(main_exe "percolator")
@@ -192,7 +201,8 @@ target_include_directories(${main_exe} PUBLIC extern/)
 target_link_libraries(
   ${main_exe} PRIVATE
   lattice imgui_latticeview
-  imgui imgui_widgets imgui_impl_sdl imgui_impl_opengl3 imgui_demo
+  glad
+  imgui imgui_widgets imgui_impl_glfw imgui_impl_opengl3 imgui_demo
   ${PLATFORM_LINK_LIBS})
 target_compile_options( ${main_exe} PUBLIC ${compiler_warning_flags} )
 
@@ -208,8 +218,7 @@ target_compile_options( ${main_exe} PUBLIC ${compiler_warning_flags} )
 if(WIN32)
   # Copy DLLs to build directory (see <https://stackoverflow.com/questions/10671916>).
   set(WIN32_DLLS
-      "SDL2-2.0.12/lib/x64/SDL2.dll"
-      "glew-2.1.0/bin/Release/x64/glew32.dll")
+      "glfw-3.3.2/lib/glfw3.dll")
   foreach(F IN LISTS WIN32_DLLS)
     add_custom_command(TARGET ${main_exe} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E

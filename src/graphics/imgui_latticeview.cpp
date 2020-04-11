@@ -16,10 +16,8 @@
 #define NOMINMAX    // Prevent windows.h from clobbering STL's min and max.
 #include <windows.h>
 #endif
-#include <GL/gl.h>
-#ifdef _WIN32
-#include <SDL_opengl_glext.h>
-#endif
+//#include <GL/gl.h>   // Already handled by glad/glad.h
+#include <glad/glad.h>
 
 bool make_gl_texture_from_lattice(const Lattice* data, GLuint* out_texture) {
   int width {data->get_width()};

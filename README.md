@@ -25,8 +25,7 @@ Windows binaries are [available here](https://yakov.shklarov.com/percolator/).
 Building
 --------
 
-**Linux**: Install CMake, SDL2, and GLEW (if you're on debian: packages cmake, libsdl2-dev, and
-libglew-dev). Then use the standard CMake build procedure. For example:
+**Linux**: Install CMake and GLFW (if you're on debian: packages cmake and libglfw3-dev). Then use the standard CMake build procedure. For example:
 
     $ git clone git@github.com:yshklarov/percolator.git
     $ mkdir percolator/build
@@ -36,7 +35,7 @@ libglew-dev). Then use the standard CMake build procedure. For example:
     $ ./percolator
 
 **Windows**: Load the folder as a CMake project in you favorite IDE. All external includes and
-libraries are already in the source tree. The build has been tested with MSVC on Visual Studio.
+libraries are already in the source tree. The build has been tested with MSVC 19.25.28612 on x64.
 
 **Other platforms**: Percolator uses [ImGui](https://github.com/ocornut/imgui) for the user
 interface. ImGui supports many different platforms and graphics backends, so it should be
