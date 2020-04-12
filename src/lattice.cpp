@@ -1,7 +1,9 @@
 //#include <random>
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <limits>
+
 #include "lattice.h"
 
 // Xorshift: Fast RNG. Copied from <https://en.wikipedia.org/wiki/Xorshift>.

@@ -435,6 +435,8 @@ int main(int, char**) {
             if (auto_flow) {
               // TODO Find a more elegant way to deal with auto_flow.
               flow_was_requested = true;
+            } else {
+              flowing = false;
             }
           }
           ImGui::SameLine();
@@ -495,6 +497,8 @@ int main(int, char**) {
           if (ImGui::RadioButton("From the top",
                                  (int *)&flow_direction, (int)FlowDirection::top)) {
             lattice.setFlowDirection(flow_direction);
+            lattice.flood_entryways();
+            redraw = true;
           }
           ImGui::SameLine();
           if (ImGui::RadioButton("From all sides",
@@ -529,6 +533,7 @@ int main(int, char**) {
         lattice.percolate();
       }
       if (percolation_step_was_requested) {
+        flowing = false;
         lattice.percolate_step();
       }
       if (regeneration_was_requested or
