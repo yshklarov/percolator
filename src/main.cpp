@@ -180,7 +180,9 @@ int main(int, char**) {
   auto clear_color {ImVec4(0.00F, 0.00F, 0.00F, 1.00F)};  // Background color behind DockSpace
   auto lattice_size {30};
   float flow_speed {10.0F};
+  FlowDirection flow_direction {FlowDirection::top};
   auto lattice {Lattice(lattice_size, lattice_size)};
+  lattice.setFlowDirection(flow_direction);
   auto probability_measure {ProbabilityMeasure::bernoulli};
   const float rect_site_percolation_threshold {0.59274605F};
   float open_p {rect_site_percolation_threshold};
@@ -488,6 +490,19 @@ int main(int, char**) {
 
           ImGui::SameLine();
           HelpMarker("The rate of fluid flow through the lattice (in steps per second).");
+
+          ImGui::Text("Direction:"); ImGui::SameLine();
+          if (ImGui::RadioButton("From the top",
+                                 (int *)&flow_direction, (int)FlowDirection::top)) {
+            lattice.setFlowDirection(flow_direction);
+          }
+          ImGui::SameLine();
+          if (ImGui::RadioButton("From all sides",
+                                 (int *)&flow_direction, (int)FlowDirection::all_sides)) {
+            lattice.setFlowDirection(flow_direction);
+            lattice.flood_entryways();
+            redraw = true;
+          }
         }
             
         ImGui::EndChild();

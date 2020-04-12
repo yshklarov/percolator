@@ -4,6 +4,7 @@
 
 enum class SiteStatus : std::int8_t {open, closed, flooded, freshly_flooded};
 enum class Pattern : int {open, pattern_1, pattern_2, pattern_3};
+enum class FlowDirection : int {top, all_sides};
 
 struct point {
   point(int x_coord, int y_coord)
@@ -20,6 +21,7 @@ public:
       : grid_width {width}
       , grid_height {height}
       , begun_flooding {false}
+      , flow_direction {FlowDirection::all_sides}
   {
     allocate_grid();
   }
@@ -63,20 +65,23 @@ public:
   int get_height () const { return grid_height; }
 
   void fill_pattern(Pattern pattern);
-  void unflood();
   void randomize_bernoulli(double p = 0.5);
   void percolate();
   bool percolate_step();
+  void unflood();
+  FlowDirection getFlowDirection();
+  void setFlowDirection(FlowDirection direction);
+  bool flood_entryways();
 
 private:
   int grid_width;
   int grid_height;
   bool begun_flooding;
+  FlowDirection flow_direction;
   std::vector<point> freshly_flooded;
   SiteStatus* grid;  // Flat layout for speed.
 
   void allocate_grid();
-  bool flood_first_row();
 
   inline SiteStatus grid_get(int x, int y) const {
     return grid[y * grid_width + x];

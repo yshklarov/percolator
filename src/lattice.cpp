@@ -77,17 +77,6 @@ void Lattice::fill_pattern(Pattern pattern) {
   begun_flooding = false;
 }
 
-void Lattice::unflood() {
-  for (auto i {0}; i < grid_width * grid_height; ++i) {
-    if (grid[i] == SiteStatus::flooded or
-        grid[i] == SiteStatus::freshly_flooded) {
-      grid[i] = SiteStatus::open;
-    }
-  }
-  freshly_flooded.clear();
-  begun_flooding = false;
-}
-
 void Lattice::allocate_grid() {
   grid = new SiteStatus[grid_width * grid_height];
   for (auto i {0}; i < grid_width * grid_height; ++i) {
@@ -120,7 +109,7 @@ void Lattice::randomize_bernoulli(const double p) {
 // Returns true if anything new gets flooded.
 bool Lattice::percolate_step() {
   if (!begun_flooding) {
-    return flood_first_row();
+    return flood_entryways();
   }
   static std::vector<point> currently_flooding;
   currently_flooding.clear();
@@ -149,22 +138,64 @@ bool Lattice::percolate_step() {
 
 void Lattice::percolate() {
   if (!begun_flooding) {
-    flood_first_row();
+    flood_entryways();
   }
   while (percolate_step());
 }
 
-// Flood the top row, and return true if anything new got flooded.
-bool Lattice::flood_first_row() {
-  freshly_flooded.clear();
-  for (auto x{0}; x < grid_width; ++x) {
-    if (grid_get(x, 0) == SiteStatus::freshly_flooded) {
-      grid_set(x, 0, SiteStatus::flooded);
-    } else if (grid_get(x, 0) == SiteStatus::open) {
-      grid_set(x, 0, SiteStatus::freshly_flooded);
-      freshly_flooded.push_back({x, 0});
+// Return true if anything new got flooded.
+bool Lattice::flood_entryways() {
+  auto flooded_something_new {false};
+  auto flood_entryway {[this, &flooded_something_new](int x, int y) {
+                         if (grid_get(x, y) == SiteStatus::open) {
+                           grid_set(x, y, SiteStatus::freshly_flooded);
+                           freshly_flooded.push_back({x, y});
+                           flooded_something_new = true;
+                         }
+                       }};
+
+  switch (flow_direction) {
+  case FlowDirection::top:
+    for (auto x{0}; x < grid_width; ++x) {
+      flood_entryway(x, 0);
+    }
+    break;
+  case FlowDirection::all_sides:
+    [[fallthrough]];
+  default:
+    const std::array<int, 2> ys {0, grid_height - 1};
+    for (auto y : ys) {
+      for (auto x{0}; x < grid_width; ++x) {
+        flood_entryway(x, y);
+      }
+    }
+    const std::array<int, 2> xs {0, grid_width - 1};
+    for (auto x : xs) {
+      for (auto y{1}; y < grid_height - 1; ++y) {
+        flood_entryway(x, y);
+      }
     }
   }
+
   begun_flooding = true;
-  return not freshly_flooded.empty();
+  return flooded_something_new;
+}
+
+void Lattice::unflood() {
+  for (auto i {0}; i < grid_width * grid_height; ++i) {
+    if (grid[i] == SiteStatus::flooded or
+        grid[i] == SiteStatus::freshly_flooded) {
+      grid[i] = SiteStatus::open;
+    }
+  }
+  freshly_flooded.clear();
+  begun_flooding = false;
+}
+
+FlowDirection Lattice::getFlowDirection() {
+  return this->flow_direction;
+}
+
+void Lattice::setFlowDirection(FlowDirection direction) {
+  this->flow_direction = direction;
 }
