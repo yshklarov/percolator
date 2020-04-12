@@ -341,8 +341,16 @@ int main(int, char**) {
     // Control window
     {
       if (ImGui::Begin("Control")) {
+#ifdef DEVEL_FEATURES
+        const int nlines = 2;
+#else
+        const int nlines = 1;
+#endif
+        const float footer_height_to_reserve {
+          ImGui::GetStyle().ItemSpacing.y +  // Separator
+          nlines * ImGui::GetFrameHeightWithSpacing()}; // Buttons
         // Leave room for line(s) below us
-        ImGui::BeginChild("main config", ImVec2(0, - 2 * ImGui::GetFrameHeightWithSpacing()));
+        ImGui::BeginChild("main config", ImVec2(0, - footer_height_to_reserve));
 
         ImGui::SetNextTreeNodeOpen(true, ImGuiCond_FirstUseEver);
         if (ImGui::CollapsingHeader("Lattice")) {
@@ -511,12 +519,13 @@ int main(int, char**) {
             
         ImGui::EndChild();
 
-        ImGui::Checkbox("Lattice viewport", &show_lattice_window);
+        ImGui::Separator();
+        ImGui::Checkbox("Show lattice", &show_lattice_window);
 #ifdef DEVEL_FEATURES
         ImGui::SameLine(); ImGui::Checkbox("Demo Window", &show_demo_window);
-#endif
         ImGui::Text("GUI framerate: %.3f ms/frame (%.1f FPS)",
                     1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+#endif
       }
       ImGui::End();
 

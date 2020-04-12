@@ -26,7 +26,12 @@ endif()
 
 # For special features disabled in the release build.
 # In code, put "#ifdef DEVEL_BUILD <...> #endif".
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEVEL_FEATURES")
+option(ENABLE_DEVEL_FEATURES
+  "Special features useful only during development"
+  OFF)
+if(ENABLE_DEVEL_FEATURES)
+  add_compile_definitions(DEVEL_FEATURES)
+endif()
 
 
 ################
@@ -57,6 +62,7 @@ if(UNIX)
     endif()
   endif()
 endif()
+mark_as_advanced(FORCE CCACHE)
 
 # Export a compile_commands.json. Useful for various clang tools, Sourcetrail, etc.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -93,6 +99,7 @@ if(ENABLE_CLANG_TIDY)
     message(SEND_ERROR "clang-tidy requested but not found")
   endif()
 endif()
+mark_as_advanced(FORCE CLANGTIDY)
 
 
 ################
@@ -258,4 +265,8 @@ if(WIN32)
           tar "cfv" "${project_name}_windows-x64.zip" --format=zip ${PACKAGE_FILES}
       COMMENT "Creating .zip file.")
   endif()
+endif()
+
+if(UNIX)
+  install(TARGETS ${main_exe} DESTINATION bin)
 endif()
