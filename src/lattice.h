@@ -86,15 +86,17 @@ public:
 private:
   int grid_width;
   int grid_height;
+  SiteStatus* grid;  // Flat layout for speed.
   bool begun_percolation;
   FlowDirection flow_direction;
   std::vector<Site> freshly_flooded;
-  std::vector<Cluster> clusters;
+  // For some reason, sorting a vector of pointers is *much* faster than sorting a vector of vectors.
+  std::vector<Cluster*> clusters;
   Cluster current_cluster;
-  SiteStatus* grid;  // Flat layout for speed.
 
-  void allocate_grid();
   void flow_fully_(bool track_cluster);
+  void allocate_grid();
+  void clear_clusters();
 
   inline SiteStatus grid_get(int x, int y) const {
     return grid[y * grid_width + x];

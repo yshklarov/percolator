@@ -57,7 +57,7 @@ bool make_gl_texture_from_lattice(
   constexpr uint32_t black = 0x000000FF;
   constexpr uint32_t white = 0xFFFFFFFF;
   data->for_each_site(
-    [&] (int x, int y) {
+    [&] (const int x, const int y) {
       uint32_t site_color {white};
       switch (data->site_status(x, y)) {
       case SiteStatus::open:
@@ -84,7 +84,7 @@ bool make_gl_texture_from_lattice(
     uint32_t cluster_color_increment {0x09315700};
     data->for_each_cluster(
       [&] (Cluster cluster) {
-        for (auto site : cluster) {
+        for (const auto site : cluster) {
           texture_data[site.y * width + site.x] = cluster_color;
         }
         cluster_color += cluster_color_increment;

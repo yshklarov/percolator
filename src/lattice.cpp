@@ -14,6 +14,7 @@ void Lattice::resize(const int width, const int height) {
   grid_height = height;
   // TODO This is slow for large grids. Can we avoid doing it unless strictly necessary?
   allocate_grid();
+  clear_clusters();
   freshly_flooded.clear();
   begun_percolation = false;
 }
@@ -93,7 +94,7 @@ void Lattice::fill_pattern(Pattern pattern) {
     [&](int x, int y) {
       grid[y * grid_width + x] = status_of(x, y);
     });
-  clusters.clear();
+  clear_clusters();
   freshly_flooded.clear();
   begun_percolation = false;
 }
@@ -105,7 +106,7 @@ void Lattice::randomize_bernoulli(const double p) {
       ? SiteStatus::open
       : SiteStatus::closed;
   }
-  clusters.clear();
+  clear_clusters();
   freshly_flooded.clear();
   begun_percolation = false;
 }
@@ -204,7 +205,7 @@ void Lattice::flow_fully_(bool track_cluster) {
 
 void Lattice::find_clusters() {
   reset_percolation();
-  clusters.clear();
+  clear_clusters();
   begun_percolation = true;
   auto begin_flooding_at {
     [&](int x, int y) -> bool {
@@ -220,7 +221,7 @@ void Lattice::find_clusters() {
     [&](int x, int y) {
       if (begin_flooding_at(x, y)) {
         flow_fully_(true);
-        clusters.push_back(current_cluster);
+        clusters.push_back(new Cluster {current_cluster});
         current_cluster.clear();
       }
     });
@@ -229,11 +230,12 @@ void Lattice::find_clusters() {
 
 // Sort all clusters by size in descending order.
 void Lattice::sort_clusters() {
+  // TODO This is very, very slow. Why?
   std::sort(
     clusters.begin(),
     clusters.end(),
-    [&](auto cluster1, auto cluster2) {
-      return cluster1.size() > cluster2.size();
+    [&](const auto cluster1, const auto cluster2) {
+      return cluster1->size() > cluster2->size();
     });
 }
 
@@ -252,7 +254,7 @@ void Lattice::reset_percolation() {
       grid[i] = SiteStatus::open;
     }
   }
-  clusters.clear();
+  clear_clusters();
   freshly_flooded.clear();
   begun_percolation = false;
 }
@@ -267,7 +269,7 @@ void Lattice::for_each_site(std::function<void (int, int)> f) const {
 
 void Lattice::for_each_cluster(std::function<void (Cluster)> f) const {
   for (auto cluster : clusters) {
-    f(cluster);
+    f(*cluster);
   }
 }
 
@@ -276,4 +278,11 @@ void Lattice::allocate_grid() {
   for (auto i {0}; i < grid_width * grid_height; ++i) {
     grid[i] = SiteStatus::open;
   }
+}
+
+void Lattice::clear_clusters() {
+  for (auto cluster : clusters) {
+    delete cluster;
+  }
+  clusters.clear();
 }

@@ -198,6 +198,7 @@ int main(int, char**) {
   auto percolation_was_requested {false};
   auto percolation_step_was_requested {false};
   auto flow_was_requested {false};
+  unsigned int num_clusters {0};
 
   // Main loop
   while (!glfwWindowShouldClose(window)) {
@@ -564,30 +565,36 @@ int main(int, char**) {
             }
             if (auto_find_clusters or lattice.done_percolation()) {
               // Show cluster count
-              auto n {lattice.num_clusters()};
-              ImGui::Text(n == 1 ? "Found %d cluster" : "Found %d clusters", n);
-
+              ImGui::Text(num_clusters == 1
+                          ? "Found %d cluster"
+                          : "Found %d clusters",
+                          num_clusters);
 #ifdef DEVEL_FEATURES
-              // Show table: How many clusters there are of each size
-              std::map<const unsigned int, unsigned int> sizes;
-              lattice.for_each_cluster(
-                [&] (auto cluster) {
-                  sizes[cluster.size()] += 1;
-                });
-              {
-                ImGui::BeginChild("Cluster sizes",
-                                  ImVec2(200, ImGui::GetTextLineHeightWithSpacing() * 20.F), true);
-                ImGui::Columns(2, "clustersizescolumns");
-                ImGui::Text("Size"); ImGui::NextColumn();
-                ImGui::Text("Count"); ImGui::NextColumn();
-                ImGui::Separator();
-                for (auto size {sizes.rbegin()}; size != sizes.rend(); ++size) {
-                  ImGui::Text("%-8d", size->first);
-                  ImGui::NextColumn();
-                  ImGui::Text("%-8d", size->second);
-                  ImGui::NextColumn();
+              if (ImGui::TreeNode("Clusters")) {
+                // Show table: How many clusters there are of each size
+                // TODO Don't re-compute this every frame: It's very slow.
+                std::map<const unsigned int, unsigned int> sizes;
+                lattice.for_each_cluster(
+                  [&] (auto cluster) {
+                    sizes[cluster.size()] += 1;
+                  });
+                {
+                  ImGui::BeginChild(
+                    "Cluster sizes",
+                    ImVec2(200, ImGui::GetTextLineHeightWithSpacing() * 20.0F),
+                    true);
+                  ImGui::Columns(2, "clustersizescolumns");
+                  ImGui::Text("Size"); ImGui::NextColumn();
+                  ImGui::Text("Count"); ImGui::NextColumn();
+                  ImGui::Separator();
+                  for (auto size {sizes.rbegin()}; size != sizes.rend(); ++size) {
+                    ImGui::Text("%-8d", size->first);
+                    ImGui::NextColumn();
+                    ImGui::Text("%-8d", size->second);
+                    ImGui::NextColumn();
+                  }
+                  ImGui::EndChild();
                 }
-                ImGui::EndChild();
               }
 #endif
             }
@@ -628,6 +635,7 @@ int main(int, char**) {
         if (percolation_mode == PercolationMode::clusters
             and not lattice.done_percolation()) {
           lattice.find_clusters();
+          num_clusters = lattice.num_clusters();
           redraw = true;
         }
         percolation_was_requested = false;
