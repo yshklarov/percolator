@@ -1,10 +1,30 @@
 //#include <random>
+#include <algorithm>
 #include <array>
+#include <cassert>
 #include <cstdint>
 #include <functional>
 #include <limits>
 
 #include "lattice.h"
+
+void Lattice::resize(const int width, const int height) {
+  delete[] grid;
+  grid_width = width;
+  grid_height = height;
+  // TODO This is slow for large grids. Can we avoid doing it unless strictly necessary?
+  allocate_grid();
+  freshly_flooded.clear();
+  begun_percolation = false;
+}
+
+FlowDirection Lattice::getFlowDirection() {
+  return this->flow_direction;
+}
+
+void Lattice::setFlowDirection(FlowDirection direction) {
+  this->flow_direction = direction;
+}
 
 // Xorshift: Fast RNG. Copied from <https://en.wikipedia.org/wiki/Xorshift>.
 uint32_t xorshift32() {
@@ -65,37 +85,18 @@ void Lattice::fill_pattern(Pattern pattern) {
   case Pattern::open:  // All sites open
     status_of = [](int x, int y) { return SiteStatus::open; };
     break;
-  default:  // Really shouldn't happen.
-    // TODO Log an error
-    status_of = [](int x, int y) { return SiteStatus::closed; };
+  default:
+    assert(false);
     break;
   }
-  for (auto y {0}; y < grid_height; ++y) {
-    for (auto x {0}; x < grid_width; ++x) {
+  for_each_site(
+    [&](int x, int y) {
       grid[y * grid_width + x] = status_of(x, y);
-    }
-  }
+    });
+  clusters.clear();
   freshly_flooded.clear();
-  begun_flooding = false;
+  begun_percolation = false;
 }
-
-void Lattice::allocate_grid() {
-  grid = new SiteStatus[grid_width * grid_height];
-  for (auto i {0}; i < grid_width * grid_height; ++i) {
-    grid[i] = SiteStatus::open;
-  }
-}
-
-void Lattice::resize(const int width, const int height) {
-  delete grid;
-  grid_width = width;
-  grid_height = height;
-  // TODO This is slow for large grids. Can we avoid doing it unless strictly necessary?
-  allocate_grid();  
-  freshly_flooded.clear();
-  begun_flooding = false;
-}
-
 
 void Lattice::randomize_bernoulli(const double p) {
   const auto is_open = get_bernoulli_gen(p);
@@ -104,16 +105,58 @@ void Lattice::randomize_bernoulli(const double p) {
       ? SiteStatus::open
       : SiteStatus::closed;
   }
+  clusters.clear();
   freshly_flooded.clear();
-  begun_flooding = false;
+  begun_percolation = false;
+}
+
+// Return true if anything new got flooded.
+bool Lattice::flood_entryways() {
+  auto flooded_something_new {false};
+  auto flood_entryway {
+    [this, &flooded_something_new](int x, int y) {
+      if (grid_get(x, y) == SiteStatus::open) {
+        grid_set(x, y, SiteStatus::freshly_flooded);
+        freshly_flooded.push_back({x, y});
+        flooded_something_new = true;
+      }
+    }};
+  begun_percolation = true;
+
+  switch (flow_direction) {
+  case FlowDirection::top:
+    for (auto x{0}; x < grid_width; ++x) {
+      flood_entryway(x, 0);
+    }
+    break;
+  case FlowDirection::all_sides: {
+    const std::array<int, 2> ys {0, grid_height - 1};
+    for (auto y : ys) {
+      for (auto x{0}; x < grid_width; ++x) {
+        flood_entryway(x, y);
+      }
+    }
+    const std::array<int, 2> xs {0, grid_width - 1};
+    for (auto x : xs) {
+      for (auto y{1}; y < grid_height - 1; ++y) {
+        flood_entryway(x, y);
+      }
+    }
+    break; }
+  default:
+    assert(false);
+    break;
+  }
+
+  return flooded_something_new;
 }
 
 // Returns true if anything new gets flooded.
-bool Lattice::percolate_step() {
-  if (!begun_flooding) {
+inline bool Lattice::flow_one_step() {
+  if (!begun_percolation) {
     return flood_entryways();
   }
-  static std::vector<point> currently_flooding;
+  static std::vector<Site> currently_flooding;
   currently_flooding.clear();
   for (auto p : freshly_flooded) {
     grid_set(p.x, p.y, SiteStatus::flooded);  // No longer fresh
@@ -138,66 +181,99 @@ bool Lattice::percolate_step() {
   return not freshly_flooded.empty();
 }
 
-void Lattice::percolate() {
-  if (!begun_flooding) {
+void Lattice::flow_fully() {
+  flow_fully_(false);
+}
+
+void Lattice::flow_fully_(bool track_cluster) {
+  if (!begun_percolation) {
     flood_entryways();
   }
-  while (percolate_step());
-}
-
-// Return true if anything new got flooded.
-bool Lattice::flood_entryways() {
-  auto flooded_something_new {false};
-  auto flood_entryway {[this, &flooded_something_new](int x, int y) {
-                         if (grid_get(x, y) == SiteStatus::open) {
-                           grid_set(x, y, SiteStatus::freshly_flooded);
-                           freshly_flooded.push_back({x, y});
-                           flooded_something_new = true;
-                         }
-                       }};
-
-  switch (flow_direction) {
-  case FlowDirection::top:
-    for (auto x{0}; x < grid_width; ++x) {
-      flood_entryway(x, 0);
-    }
-    break;
-  case FlowDirection::all_sides:
-    [[fallthrough]];
-  default:
-    const std::array<int, 2> ys {0, grid_height - 1};
-    for (auto y : ys) {
-      for (auto x{0}; x < grid_width; ++x) {
-        flood_entryway(x, y);
-      }
-    }
-    const std::array<int, 2> xs {0, grid_width - 1};
-    for (auto x : xs) {
-      for (auto y{1}; y < grid_height - 1; ++y) {
-        flood_entryway(x, y);
-      }
-    }
+  if (track_cluster) {
+    do {
+      // Append the newly flooded sites to the current cluster.
+      current_cluster.insert(
+        std::end(current_cluster),
+        std::begin(freshly_flooded),
+        std::end(freshly_flooded));
+    } while (flow_one_step());
+  } else {
+    while (flow_one_step());
   }
-
-  begun_flooding = true;
-  return flooded_something_new;
 }
 
-void Lattice::unflood() {
+void Lattice::find_clusters() {
+  reset_percolation();
+  clusters.clear();
+  begun_percolation = true;
+  auto begin_flooding_at {
+    [&](int x, int y) -> bool {
+      freshly_flooded.clear();
+      if (grid_get(x, y) == SiteStatus::open) {
+        grid_set(x, y, SiteStatus::freshly_flooded);
+        freshly_flooded.push_back({x, y});
+        return true;
+      }
+      return false;
+    }};
+  for_each_site(
+    [&](int x, int y) {
+      if (begin_flooding_at(x, y)) {
+        flow_fully_(true);
+        clusters.push_back(current_cluster);
+        current_cluster.clear();
+      }
+    });
+  freshly_flooded.clear();
+}
+
+// Sort all clusters by size in descending order.
+void Lattice::sort_clusters() {
+  std::sort(
+    clusters.begin(),
+    clusters.end(),
+    [&](auto cluster1, auto cluster2) {
+      return cluster1.size() > cluster2.size();
+    });
+}
+
+unsigned int Lattice::num_clusters() {
+  return clusters.size();
+}
+
+bool Lattice::done_percolation() {
+  return begun_percolation and freshly_flooded.empty();
+}
+
+void Lattice::reset_percolation() {
   for (auto i {0}; i < grid_width * grid_height; ++i) {
     if (grid[i] == SiteStatus::flooded or
         grid[i] == SiteStatus::freshly_flooded) {
       grid[i] = SiteStatus::open;
     }
   }
+  clusters.clear();
   freshly_flooded.clear();
-  begun_flooding = false;
+  begun_percolation = false;
 }
 
-FlowDirection Lattice::getFlowDirection() {
-  return this->flow_direction;
+void Lattice::for_each_site(std::function<void (int, int)> f) const {
+  for (auto y {0}; y < grid_height; ++y) {
+    for (auto x {0}; x < grid_width; ++x) {
+      f(x, y);
+    }
+  }
 }
 
-void Lattice::setFlowDirection(FlowDirection direction) {
-  this->flow_direction = direction;
+void Lattice::for_each_cluster(std::function<void (Cluster)> f) const {
+  for (auto cluster : clusters) {
+    f(cluster);
+  }
+}
+
+void Lattice::allocate_grid() {
+  grid = new SiteStatus[grid_width * grid_height];
+  for (auto i {0}; i < grid_width * grid_height; ++i) {
+    grid[i] = SiteStatus::open;
+  }
 }

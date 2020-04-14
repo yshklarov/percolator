@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <iostream>
 #include <string>
@@ -78,6 +79,7 @@ void regenerate_lattice(Lattice &lattice, const ProbabilityMeasure measure, cons
     lattice.randomize_bernoulli(p);
     break;
   default:
+    assert(false);
     break;
   }
 }
@@ -187,7 +189,9 @@ int main(int, char**) {
   const float rect_site_percolation_threshold {0.59274605F};
   float open_p {rect_site_percolation_threshold};
   regenerate_lattice(lattice, probability_measure, open_p);
+  auto percolation_mode {PercolationMode::flow};
   auto auto_percolate {false};
+  auto auto_find_clusters {false};
   auto auto_flow {false};
   auto regeneration_was_requested {false};
   auto percolation_was_requested {false};
@@ -320,7 +324,7 @@ int main(int, char**) {
               ImGui::DockBuilderSetNodeSize(dockspace_id, viewport_size); // Necessary: See imgui_internal.h
 
               // Make the Lattice window square, if possible.
-              float split_ratio = std::max(0.20f, (viewport_size.x - viewport_size.y) / viewport_size.x);
+              float split_ratio = std::max(0.20F, (viewport_size.x - viewport_size.y) / viewport_size.x);
               ImGuiID left;
               ImGuiID right;
               ImGui::DockBuilderSplitNode(dockspace_id, ImGuiDir_Right, 1.0F - split_ratio, &right, &left);
@@ -371,14 +375,14 @@ int main(int, char**) {
             // clamp the value SliderInt returns true every frame until it loses focus. As a
             // workaround, we only resize if the value *actually* changed.
             // (See <https://github.com/ocornut/imgui/issues/1829>)
-            auto old_lattice_size {lattice_size};
+            auto previous_lattice_size {lattice_size};
             lattice_size = static_cast<int>(lattice_size_f);
             lattice_size_f = std::max(min_size_f, lattice_size_f);
             lattice_size_f = std::min(max_size_f, lattice_size_f);
             // Convert these separately to avoid floating-point rounding shenanigans.
             lattice_size = std::max(min_size, lattice_size);
             lattice_size = std::min(max_size, lattice_size);
-            if (lattice_size != old_lattice_size) {
+            if (lattice_size != previous_lattice_size) {
               lattice.resize(lattice_size, lattice_size);
               regeneration_was_requested = true;
             }
@@ -402,14 +406,14 @@ int main(int, char**) {
           }
 
           if (probability_measure == ProbabilityMeasure::bernoulli) {
-            float old_open_p {0};
-            old_open_p = open_p;
+            float previous_open_p {0};
+            previous_open_p = open_p;
             if (ImGui::SliderFloat("p", &open_p, 0.0F, 1.0F, "%.6f")) {
               // Work around ImGui's unclamped keyboard input behavior.
               // See comment at lattice_size SliderScalar).
               open_p = std::max(0.0F, open_p);
               open_p = std::min(1.0F, open_p);
-              if (open_p != old_open_p) {
+              if (open_p != previous_open_p) {
                 lattice.resize(lattice_size, lattice_size);
                 regeneration_was_requested = true;
               }
@@ -428,92 +432,137 @@ int main(int, char**) {
 
         ImGui::SetNextTreeNodeOpen(true, ImGuiCond_FirstUseEver);
         if (ImGui::CollapsingHeader("Percolation")) {
-          if (lattice.is_fully_flooded() or auto_percolate) {
-            begin_disable_items();
-            ImGui::Button("Percolate!");
-            end_disable_items();
-          } else if (ImGui::Button("Percolate!")) {
-            percolation_was_requested = true;
-          }
-          ImGui::SameLine();
-          if (ImGui::Button("Clear")) {
-            lattice.unflood();
-            redraw = true;
-            auto_percolate = false;
+          ImGui::Text("Mode:"); ImGui::SameLine();
+          auto previous_percolation_mode {percolation_mode};
+          if (ImGui::RadioButton("Simulate flow",
+                                 (int *)&percolation_mode, (int)PercolationMode::flow)
+              and percolation_mode != previous_percolation_mode) {
+            lattice.reset_percolation();
             if (auto_flow) {
-              // TODO Find a more elegant way to deal with auto_flow.
               flow_was_requested = true;
-            } else {
-              flowing = false;
             }
+            redraw = true;
           }
           ImGui::SameLine();
-          if (ImGui::Checkbox("Auto-percolate", &auto_percolate) and auto_percolate) {
-            percolation_was_requested = true;
-            auto_flow = false;  // It makes no sense to have both at once.
-          }
-
-          if (auto_flow) {
-            begin_disable_items();
-            ImGui::Button("Pause flow");
-            end_disable_items();
-          } else if (!flowing) {
-            if (lattice.is_fully_flooded() or auto_percolate) {
-              begin_disable_items();
-              ImGui::Button("Begin flow");
-              end_disable_items();
-            } else if (ImGui::Button("Begin flow")) {
-              flow_was_requested = true;
-            }
-          } else if (ImGui::Button("Pause flow")) {
+          if (ImGui::RadioButton("Show clusters",
+                                 (int *)&percolation_mode, (int)PercolationMode::clusters)
+              and percolation_mode != previous_percolation_mode) {
+            lattice.reset_percolation();
             flowing = false;
+            redraw = true;
           }
 
-          ImGui::SameLine();
-          if (lattice.is_fully_flooded() or auto_percolate or auto_flow) {
-            begin_disable_items();
-            ImGui::Button("Single step");
-            end_disable_items();
-          } else if (ImGui::Button("Single step")) {
-            percolation_step_was_requested = true;
-          }
+          if (percolation_mode == PercolationMode::flow) {
+            if (lattice.done_percolation() or auto_percolate) {
+              begin_disable_items();
+              ImGui::Button("Percolate!");
+              end_disable_items();
+            } else if (ImGui::Button("Percolate!")) {
+              percolation_was_requested = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Clear")) {
+              lattice.reset_percolation();
+              redraw = true;
+              auto_percolate = false;
+              if (auto_flow) {
+                // TODO Find a more elegant way to deal with auto_flow.
+                flow_was_requested = true;
+              } else {
+                flowing = false;
+              }
+            }
+            ImGui::SameLine();
+            if (ImGui::Checkbox("Auto-percolate", &auto_percolate) and auto_percolate) {
+              percolation_was_requested = true;
+              auto_flow = false;  // It makes no sense to have both at once.
+            }
 
-          ImGui::SameLine();
-          if (ImGui::Checkbox("Auto-flow", &auto_flow)) {
             if (auto_flow) {
-              auto_percolate = false;  // It makes no sense to have both at once.
-              flow_was_requested = true;
-            } else {
+              begin_disable_items();
+              ImGui::Button("Pause flow");
+              end_disable_items();
+            } else if (!flowing) {
+              if (auto_percolate or lattice.done_percolation()) {
+                begin_disable_items();
+                ImGui::Button("Begin flow");
+                end_disable_items();
+              } else if (ImGui::Button("Begin flow")) {
+                flow_was_requested = true;
+              }
+            } else if (ImGui::Button("Pause flow")) {
               flowing = false;
             }
-          }
 
-          static const float min_speed = 1.0F;
-          static const float max_speed = 5000.0F;
-          if (ImGui::SliderScalar("Flow speed", ImGuiDataType_Float, &flow_speed,
-                                  &min_speed, &max_speed, "%.1f", 2.0F)) {
-            // Work around ImGui's unclamped keyboard input behavior.
-            // See comment at lattice_size SliderScalar).
-            flow_speed = std::max(min_speed, flow_speed);
-            flow_speed = std::min(max_speed, flow_speed);
-          }
+            ImGui::SameLine();
+            if (auto_percolate or auto_flow or lattice.done_percolation()) {
+              begin_disable_items();
+              ImGui::Button("Single step");
+              end_disable_items();
+            } else if (ImGui::Button("Single step")) {
+              percolation_step_was_requested = true;
+            }
 
-          ImGui::SameLine();
-          HelpMarker("The rate of fluid flow through the lattice (in steps per second).");
+            ImGui::SameLine();
+            if (ImGui::Checkbox("Auto-flow", &auto_flow)) {
+              if (auto_flow) {
+                auto_percolate = false;  // It makes no sense to have both at once.
+                flow_was_requested = true;
+              } else {
+                flowing = false;
+              }
+            }
 
-          ImGui::Text("Direction:"); ImGui::SameLine();
-          if (ImGui::RadioButton("From the top",
-                                 (int *)&flow_direction, (int)FlowDirection::top)) {
-            lattice.setFlowDirection(flow_direction);
-            lattice.flood_entryways();
-            redraw = true;
-          }
-          ImGui::SameLine();
-          if (ImGui::RadioButton("From all sides",
-                                 (int *)&flow_direction, (int)FlowDirection::all_sides)) {
-            lattice.setFlowDirection(flow_direction);
-            lattice.flood_entryways();
-            redraw = true;
+            static const float min_speed = 1.0F;
+            static const float max_speed = 5000.0F;
+            if (ImGui::SliderScalar("Flow speed", ImGuiDataType_Float, &flow_speed,
+                                    &min_speed, &max_speed, "%.1f", 2.0F)) {
+              // Work around ImGui's unclamped keyboard input behavior.
+              // See comment at lattice_size SliderScalar).
+              flow_speed = std::max(min_speed, flow_speed);
+              flow_speed = std::min(max_speed, flow_speed);
+            }
+
+            ImGui::SameLine();
+            HelpMarker("The rate of fluid flow through the lattice (in steps per second).");
+
+            ImGui::Text("Direction:"); ImGui::SameLine();
+            // TODO don't do anything if same radiobutton is re-clicked.
+            if (ImGui::RadioButton("From the top",
+                                   (int *)&flow_direction, (int)FlowDirection::top)) {
+              lattice.setFlowDirection(flow_direction);
+              lattice.flood_entryways();
+              redraw = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::RadioButton("From all sides",
+                                   (int *)&flow_direction, (int)FlowDirection::all_sides)) {
+              lattice.setFlowDirection(flow_direction);
+              lattice.flood_entryways();
+              redraw = true;
+            }
+          } else if (percolation_mode == PercolationMode::clusters) {
+            if (auto_find_clusters or lattice.done_percolation()) {
+              begin_disable_items();
+              ImGui::Button("Find clusters");
+              end_disable_items();
+            } else if (ImGui::Button("Find clusters")) {
+              percolation_was_requested = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Clear")) {
+              lattice.reset_percolation();
+              redraw = true;
+              auto_find_clusters = false;
+            }
+            ImGui::SameLine();
+            if (ImGui::Checkbox("Auto-find", &auto_find_clusters) and auto_find_clusters) {
+              percolation_was_requested = true;
+            }
+            if (auto_find_clusters or lattice.done_percolation()) {
+              auto n {lattice.num_clusters()};
+              ImGui::Text(n == 1 ? "Found %d cluster" : "Found %d clusters", n);
+            }
           }
         }
             
@@ -531,28 +580,40 @@ int main(int, char**) {
 
       if (regeneration_was_requested) {
         regenerate_lattice(lattice, probability_measure, open_p);
-        if (auto_flow) {
+        if (percolation_mode == PercolationMode::flow and auto_flow) {
           flow_was_requested = true;
         } else {
           flowing = false;
         }
       }
-      if (percolation_was_requested or auto_percolate) {
+      if ((percolation_mode == PercolationMode::flow and auto_percolate)
+          or (percolation_mode == PercolationMode::clusters and auto_find_clusters)) {
+        percolation_was_requested = true;
+      }
+      if (percolation_was_requested) {
         flowing = false;
-        lattice.percolate();
+        if (percolation_mode == PercolationMode::flow
+            and not lattice.done_percolation()) {
+          lattice.flow_fully();
+          redraw = true;
+        }
+        if (percolation_mode == PercolationMode::clusters
+            and not lattice.done_percolation()) {
+          lattice.find_clusters();
+          redraw = true;
+        }
+        percolation_was_requested = false;
       }
       if (percolation_step_was_requested) {
         flowing = false;
-        lattice.percolate_step();
+        lattice.flow_one_step();
       }
       if (regeneration_was_requested or
-          percolation_was_requested or
           percolation_step_was_requested) {
-        // We must redraw even if lattice.percolate_step() returned false, because freshly_flooded
+        // We must redraw even if lattice.flow_one_step() returned false, because freshly_flooded
         // may have changed.
         redraw = true;
         regeneration_was_requested = false;
-        percolation_was_requested = false;
         percolation_step_was_requested = false;
       }
 
@@ -560,11 +621,12 @@ int main(int, char**) {
         flowing = true;
         flow_start_time = std::chrono::high_resolution_clock::now();
         flow_was_requested = false;
-        lattice.percolate_step(); // Begin immediately.
+        lattice.flow_one_step(); // Begin immediately.
         redraw = true;
       }
 
-      if (flowing and not lattice.is_fully_flooded()) {
+      if (flowing and not lattice.done_percolation()) {
+        // TODO Replace this mess with proper timer+scheduler abstractions.
         auto now = std::chrono::high_resolution_clock::now();
         std::chrono::microseconds delay{static_cast<int>(1'000'000.F / flow_speed)};
         const int steps = (now - flow_start_time) / delay;
@@ -573,9 +635,9 @@ int main(int, char**) {
         }
         auto i {0};
         while (i < steps) {
-          lattice.percolate_step();
+          lattice.flow_one_step();
           ++i;
-          if (lattice.is_fully_flooded()) {
+          if (lattice.done_percolation()) {
             if (!auto_flow) {
               flowing = false;
             }
@@ -589,7 +651,11 @@ int main(int, char**) {
     // Lattice window
     if (show_lattice_window) {
       ImGui::Begin("Lattice", &show_lattice_window);
-      Latticeview(&lattice, redraw);
+      if (redraw and percolation_mode == PercolationMode::clusters) {
+        // Keep the cluster color scheme the same every time.
+        lattice.sort_clusters();
+      }
+      Latticeview(&lattice, redraw, percolation_mode);
       redraw = false;
       ImGui::End();
     }  // Lattice window

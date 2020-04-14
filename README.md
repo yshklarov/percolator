@@ -1,7 +1,9 @@
 Percolator
 ==========
 
-Percolator is a tool for running simulations of [percolation](https://en.wikipedia.org/wiki/Percolation_theory) on a planar lattice. Currently it only does site percolation on the square lattice.
+Percolator is a tool for simulating [percolation](https://en.wikipedia.org/wiki/Percolation_theory) on a planar lattice.
+
+Currently it only does site percolation on the square lattice.
 
 
 Screenshots
@@ -9,7 +11,11 @@ Screenshots
 
 ![screenshot 1](screenshots/screenshot_1.png)
 
-![screenshot 1](screenshots/screenshot_2.png)
+![screenshot 2](screenshots/screenshot_2.png)
+
+![screenshot 3](screenshots/screenshot_3.png)
+
+![screenshot 4](screenshots/screenshot_4.png)
 
 
 Installing

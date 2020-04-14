@@ -19,7 +19,10 @@
 //#include <GL/gl.h>   // Already handled by glad/glad.h
 #include <glad/glad.h>
 
-bool make_gl_texture_from_lattice(const Lattice* data, GLuint* out_texture) {
+bool make_gl_texture_from_lattice(
+      const Lattice* data,
+      GLuint* out_texture,
+      PercolationMode percolation_mode) {
   int width {data->get_width()};
   int height {data->get_height()};
 
@@ -44,16 +47,18 @@ bool make_gl_texture_from_lattice(const Lattice* data, GLuint* out_texture) {
   }
 
   // Draw pixels into texture.
-  // TODO only redraw what's changed.
-  // TODO don't use OpenGL to scale down giant textures: It's buggy and slow for huge textures.
-  constexpr auto grey = 0x202020FF;
-  constexpr auto blue = 0x004CFFFF;
-  constexpr auto cyan = 0x2CCDFFFF;
-  //constexpr auto black = 0x000000FF;
-  constexpr auto white = 0xFFFFFFFF;
-  for (auto y {0}; y < height; ++y) {
-    for (auto x {0}; x < width; ++x) {
-      auto site_color {white};
+  // TODO only redraw what's changed. [See branch: fast-redraw]
+  // TODO Don't use OpenGL to scale down giant textures: It's buggy (visual artefacts).
+  // TODO Idea: Pass the entire block of data in the lattice to a shader, and do the color
+  // translation on the GPU.
+  constexpr uint32_t grey = 0x202020FF;
+  constexpr uint32_t blue = 0x004CFFFF;
+  constexpr uint32_t cyan = 0x2CCDFFFF;
+  constexpr uint32_t black = 0x000000FF;
+  constexpr uint32_t white = 0xFFFFFFFF;
+  data->for_each_site(
+    [&] (int x, int y) {
+      uint32_t site_color {white};
       switch (data->site_status(x, y)) {
       case SiteStatus::open:
         site_color = white;
@@ -72,7 +77,18 @@ bool make_gl_texture_from_lattice(const Lattice* data, GLuint* out_texture) {
         break;
       }
       texture_data[y*width + x] = site_color;
-    }
+    });
+  if (percolation_mode == PercolationMode::clusters) {
+    // Overlay the clusters.
+    uint32_t cluster_color {blue};  // Color of largest cluster
+    uint32_t cluster_color_increment {0x09315700};
+    data->for_each_cluster(
+      [&] (Cluster cluster) {
+        for (auto site : cluster) {
+          texture_data[site.y * width + site.x] = cluster_color;
+        }
+        cluster_color += cluster_color_increment;
+      });
   }
 
   static GLuint texture {0};  // OpenGL texture identifier
@@ -90,8 +106,6 @@ bool make_gl_texture_from_lattice(const Lattice* data, GLuint* out_texture) {
     glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
   }
 
-  // TODO When the lattice is very large (10,000 x 10,000), we can get artefacts. Maybe
-  // manually downsample texture_data before sending it to glTexImage2D.
   // TODO When downsampling, we can get a Moire pattern. So do our own interpolation instead.
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8, texture_data);
   if (must_reallocate) {
@@ -106,13 +120,13 @@ bool make_gl_texture_from_lattice(const Lattice* data, GLuint* out_texture) {
 }
 
 
-void Latticeview(const Lattice* data, bool redraw) {
+void Latticeview(const Lattice* data, bool redraw, PercolationMode percolation_mode) {
   static GLuint image_texture {0};
   const int image_width {data->get_width()};
   const int image_height {data->get_height()};
 
   if (redraw) {
-    auto made_texture {make_gl_texture_from_lattice(data, &image_texture)};
+    auto made_texture {make_gl_texture_from_lattice(data, &image_texture, percolation_mode)};
     IM_ASSERT(made_texture);
   }
   IM_ASSERT(glIsTexture(image_texture));
