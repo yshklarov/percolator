@@ -2,6 +2,7 @@
 #include <cassert>
 #include <chrono>
 #include <iostream>
+#include <map>
 #include <string>
 
 #ifdef _WIN32
@@ -156,10 +157,10 @@ int main(int, char**) {
   ImGui::StyleColorsDark();
   //ImGui::StyleColorsLight();
 
+  ImGuiStyle& style {ImGui::GetStyle()};
   // When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look
   // identical to regular ones.
   if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
-    ImGuiStyle& style {ImGui::GetStyle()};
     style.WindowRounding = 0.0F;
     style.FrameRounding = 3.0F;
     style.FrameBorderSize = 1.0F;  // Show border around widgets for better clarity
@@ -432,6 +433,7 @@ int main(int, char**) {
 
         ImGui::SetNextTreeNodeOpen(true, ImGuiCond_FirstUseEver);
         if (ImGui::CollapsingHeader("Percolation")) {
+          ImGui::AlignTextToFramePadding();
           ImGui::Text("Mode:"); ImGui::SameLine();
           auto previous_percolation_mode {percolation_mode};
           if (ImGui::RadioButton("Simulate flow",
@@ -526,6 +528,7 @@ int main(int, char**) {
             ImGui::SameLine();
             HelpMarker("The rate of fluid flow through the lattice (in steps per second).");
 
+            ImGui::AlignTextToFramePadding();
             ImGui::Text("Direction:"); ImGui::SameLine();
             // TODO don't do anything if same radiobutton is re-clicked.
             if (ImGui::RadioButton("From the top",
@@ -560,8 +563,33 @@ int main(int, char**) {
               percolation_was_requested = true;
             }
             if (auto_find_clusters or lattice.done_percolation()) {
+              // Show cluster count
               auto n {lattice.num_clusters()};
               ImGui::Text(n == 1 ? "Found %d cluster" : "Found %d clusters", n);
+
+#ifdef DEVEL_FEATURES
+              // Show table: How many clusters there are of each size
+              std::map<const unsigned int, unsigned int> sizes;
+              lattice.for_each_cluster(
+                [&] (auto cluster) {
+                  sizes[cluster.size()] += 1;
+                });
+              {
+                ImGui::BeginChild("Cluster sizes",
+                                  ImVec2(200, ImGui::GetTextLineHeightWithSpacing() * 20.F), true);
+                ImGui::Columns(2, "clustersizescolumns");
+                ImGui::Text("Size"); ImGui::NextColumn();
+                ImGui::Text("Count"); ImGui::NextColumn();
+                ImGui::Separator();
+                for (auto size {sizes.rbegin()}; size != sizes.rend(); ++size) {
+                  ImGui::Text("%-8d", size->first);
+                  ImGui::NextColumn();
+                  ImGui::Text("%-8d", size->second);
+                  ImGui::NextColumn();
+                }
+                ImGui::EndChild();
+              }
+#endif
             }
           }
         }
