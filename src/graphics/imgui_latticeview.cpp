@@ -146,20 +146,23 @@ void Latticeview(const Lattice* data, bool redraw, PercolationMode percolation_m
 
   // Render border, unless zoomed out too far.
   ImVec2 square_size {frame_size.x / image_width, frame_size.y / image_height};
-  auto resolution {fmin(square_size.x, square_size.y)};
-  if (resolution >= 20) {
-    float thickness {static_cast<float>(fmax(0.0F, (resolution - 20.0F) / 16.F))};
-    float alpha {static_cast<float>(fmin(1.0f, fmax(0.0F, (resolution - 20.0F) / 20.0F)))};
+  float resolution {std::min(square_size.x, square_size.y)};
+  if (resolution >= 20.0F) {
+    int thickness {std::max(1, (int)((resolution - 20.0F) / 16.0F))};
+    // Prevent antialiasing when thickness is even.
+    float offset {thickness % 2 == 0 ? 0.5F : 0.0F};
+    float alpha {static_cast<float>(fmin(1.0F, fmax(0.0F, (resolution - 20.0F) / 20.0F)))};
     auto border_color = ImGui::GetColorU32(ImVec4(0.0F, 0.0F, 0.0F, alpha));
     for (auto y {1}; y < image_height; ++y) {
-      auto top {ImVec2(frame.Min.x, frame.Min.y + y * square_size.y)};
-      auto bot {ImVec2(frame.Max.x, frame.Min.y + y * square_size.y)};
-      window->DrawList->AddLine(top, bot, border_color, thickness);
+      // Calling floor() prevents ImGui from doing antialiasing when thickness == 1.
+      auto top {ImVec2(frame.Min.x, floor(frame.Min.y + y * square_size.y) + offset)};
+      auto bot {ImVec2(frame.Max.x, floor(frame.Min.y + y * square_size.y) + offset)};
+      window->DrawList->AddLine(top, bot, border_color, (float)thickness);
     }
     for (auto x {1}; x < image_width; ++x) {
-      auto left {ImVec2(frame.Min.x + x * square_size.x, frame.Min.y)};
-      auto right {ImVec2(frame.Min.x + x * square_size.x, frame.Max.y)};
-      window->DrawList->AddLine(left, right, border_color, thickness);
+      auto left {ImVec2(floor(frame.Min.x + x * square_size.x) + offset, frame.Min.y)};
+      auto right {ImVec2(floor(frame.Min.x + x * square_size.x) + offset,frame.Max.y)};
+      window->DrawList->AddLine(left, right, border_color, (float)thickness);
     }
   }
 }
