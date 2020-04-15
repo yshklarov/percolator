@@ -574,10 +574,21 @@ int main(int, char**) {
                 // Show table: How many clusters there are of each size
                 // TODO Don't re-compute this every frame: It's very slow.
                 std::map<const unsigned int, unsigned int> sizes;
+                unsigned long max_size {0};
                 lattice.for_each_cluster(
                   [&] (auto cluster) {
-                    sizes[cluster.size()] += 1;
+                    auto size {cluster.size()};
+                    sizes[size] += 1;
+                    max_size = std::max(size, max_size);
                   });
+                auto base {100.0F};
+                if (probability_measure == ProbabilityMeasure::bernoulli) {
+                  // This is inaccurate, of course, because the true proportion of open sites is
+                  // almost never exactly open_p.
+                  base /= open_p;
+                }
+                ImGui::Text("Largest cluster: %02.0f%%",
+                            base * max_size / (lattice_size * lattice_size));
                 {
                   ImGui::BeginChild(
                     "Cluster sizes",
@@ -635,6 +646,7 @@ int main(int, char**) {
         if (percolation_mode == PercolationMode::clusters
             and not lattice.done_percolation()) {
           lattice.find_clusters();
+          lattice.sort_clusters();  // Keep the cluster color scheme the same every time.
           num_clusters = lattice.num_clusters();
           redraw = true;
         }
@@ -687,10 +699,6 @@ int main(int, char**) {
     // Lattice window
     if (show_lattice_window) {
       ImGui::Begin("Lattice", &show_lattice_window);
-      if (redraw and percolation_mode == PercolationMode::clusters) {
-        // Keep the cluster color scheme the same every time.
-        lattice.sort_clusters();
-      }
       Latticeview(&lattice, redraw, percolation_mode);
       redraw = false;
       ImGui::End();
