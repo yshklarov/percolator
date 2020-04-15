@@ -10,6 +10,7 @@
 
 void Lattice::resize(const int width, const int height) {
   delete[] grid;
+  grid = nullptr;
   grid_width = width;
   grid_height = height;
   // TODO This is slow for large grids. Can we avoid doing it unless strictly necessary?
@@ -118,7 +119,7 @@ bool Lattice::flood_entryways() {
     [this, &flooded_something_new](int x, int y) {
       if (grid_get(x, y) == SiteStatus::open) {
         grid_set(x, y, SiteStatus::freshly_flooded);
-        freshly_flooded.push_back({x, y});
+        freshly_flooded.emplace_back(x, y);
         flooded_something_new = true;
       }
     }};
@@ -163,19 +164,19 @@ inline bool Lattice::flow_one_step() {
     grid_set(p.x, p.y, SiteStatus::flooded);  // No longer fresh
     if (p.y > 0 && grid_get(p.x, p.y - 1) == SiteStatus::open) {
       grid_set(p.x, p.y - 1, SiteStatus::freshly_flooded);
-      currently_flooding.push_back({p.x, p.y-1});
+      currently_flooding.emplace_back(p.x, p.y-1);
     }
     if (p.y < grid_height - 1 && grid_get(p.x, p.y + 1) == SiteStatus::open) {
       grid_set(p.x, p.y + 1, SiteStatus::freshly_flooded);
-      currently_flooding.push_back({p.x, p.y+1});
+      currently_flooding.emplace_back(p.x, p.y+1);
     }
     if (p.x > 0 && grid_get(p.x - 1, p.y) == SiteStatus::open) {
       grid_set(p.x - 1, p.y, SiteStatus::freshly_flooded);
-      currently_flooding.push_back({p.x-1, p.y});
+      currently_flooding.emplace_back(p.x-1, p.y);
     }
     if (p.x < grid_width - 1 && grid_get(p.x + 1, p.y) == SiteStatus::open) {
       grid_set(p.x + 1, p.y, SiteStatus::freshly_flooded);
-      currently_flooding.push_back({p.x+1, p.y});
+      currently_flooding.emplace_back(p.x+1, p.y);
     }
   }
   freshly_flooded.swap(currently_flooding);
@@ -199,7 +200,7 @@ void Lattice::flow_fully_(bool track_cluster) {
         std::end(freshly_flooded));
     } while (flow_one_step());
   } else {
-    while (flow_one_step());
+    while (flow_one_step()) {};
   }
 }
 
@@ -212,7 +213,7 @@ void Lattice::find_clusters() {
       freshly_flooded.clear();
       if (grid_get(x, y) == SiteStatus::open) {
         grid_set(x, y, SiteStatus::freshly_flooded);
-        freshly_flooded.push_back({x, y});
+        freshly_flooded.emplace_back(x, y);
         return true;
       }
       return false;
@@ -221,7 +222,7 @@ void Lattice::find_clusters() {
     [&](int x, int y) {
       if (begin_flooding_at(x, y)) {
         flow_fully_(true);
-        clusters.push_back(new Cluster {current_cluster});
+        clusters.emplace_back(new Cluster {current_cluster});
         current_cluster.clear();
       }
     });

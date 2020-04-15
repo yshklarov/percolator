@@ -94,7 +94,7 @@ if(ENABLE_CLANG_TIDY)
     set(CMAKE_CXX_CLANG_TIDY
       ${CLANGTIDY};
       -header-filter=/src;  # Static analysis only for our headers
-      -checks=-*,bugprone-*,clang-analyzer-*,cppcoreguidelines-*,modernize-*,performance-*,portability-*,readability-*;)
+      -checks=-*,bugprone-*,clang-analyzer-*,cppcoreguidelines-*,modernize-*,performance-*,portability-*,readability-*,-cppcoreguidelines-avoid-magic-numbers,-readability-magic-numbers,-cppcoreguidelines-pro-type-vararg,-readability-isolate-declaration,-modernize-use-trailing-return-type,-modernize-use-nodiscard,-cppcoreguidelines-pro-bounds-pointer-arithmetic;)
   else()
     message(SEND_ERROR "clang-tidy requested but not found")
   endif()

@@ -20,13 +20,14 @@ public:
   int y;
 };
 
-typedef std::vector<Site> Cluster;
+using Cluster = std::vector<Site>;
 
 class Lattice {
 public:
-  Lattice (const int width, const int height)
+  Lattice (int width, int height)
       : grid_width {width}
       , grid_height {height}
+      , grid {nullptr}
       , begun_percolation {false}
       , flow_direction {FlowDirection::all_sides}
   {
@@ -44,7 +45,7 @@ public:
   Lattice& operator=(const Lattice&) =delete;
   Lattice& operator=(Lattice&&) =delete;
 
-  void resize(const int width, const int height);
+  void resize(int width, int height);
 
   int get_width () const { return grid_width; }
   int get_height () const { return grid_height; }
@@ -76,7 +77,7 @@ public:
       grid_get(x,y) == SiteStatus::freshly_flooded;
   }
   bool is_freshly_flooded(int x, int y) const {
-    // This is *much* faster than searching the vector freshly_flooded.
+    // This is faster than searching the vector freshly_flooded.
     return grid_get(x,y) == SiteStatus::freshly_flooded;
   }
 
@@ -90,7 +91,10 @@ private:
   bool begun_percolation;
   FlowDirection flow_direction;
   std::vector<Site> freshly_flooded;
-  // For some reason, sorting a vector of pointers is *much* faster than sorting a vector of vectors.
+
+  // For some reason, sorting a vector of raw pointers is *much* faster than sorting a vector of
+  // vectors. But why? The difference in memory is not that large:
+  // sizeof(&Cluster) == 8; sizeof(Cluster) == 24.
   std::vector<Cluster*> clusters;
   Cluster current_cluster;
 

@@ -122,8 +122,8 @@ int main(int, char**) {
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // 3.0+ only
 
   // Create window with graphics context
-  GLFWwindow* window = glfwCreateWindow(1280, 720, "Percolator", NULL, NULL);
-  if (window == NULL) {
+  GLFWwindow* window = glfwCreateWindow(1280, 720, "Percolator", nullptr, nullptr);
+  if (!window) {
     std::cerr << "GLFW failed to create window!\n";
     return 1;
   }
@@ -221,7 +221,7 @@ int main(int, char**) {
         ImGui::EndMenu();
       }
       if (ImGui::BeginMenu("Help")) {
-        ImGui::MenuItem("About", NULL, &show_about_window);
+        ImGui::MenuItem("About", nullptr, &show_about_window);
         ImGui::EndMenu();
       }
       ImGui::EndMainMenuBar();
@@ -608,7 +608,7 @@ int main(int, char**) {
 #ifdef DEVEL_FEATURES
         ImGui::SameLine(); ImGui::Checkbox("Demo Window", &show_demo_window);
         ImGui::Text("GUI framerate: %.3f ms/frame (%.1f FPS)",
-                    1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+                    1000.0F / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 #endif
       }
       ImGui::End();

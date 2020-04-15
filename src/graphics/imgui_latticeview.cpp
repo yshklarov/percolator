@@ -1,5 +1,6 @@
 // Viewport widget for ImGui. Display a percolation lattice.
 
+#include <cmath>
 #include <cstdint>
 
 #include "imgui_latticeview.h"
@@ -35,9 +36,8 @@ bool make_gl_texture_from_lattice(
     must_reallocate = true;
   }
   if (must_reallocate) {
-    if (texture_data != nullptr) {
-      delete[] texture_data;
-    }
+    delete[] texture_data;
+    texture_data = nullptr;
     // TODO how do we have multiple LatticeViews in the same thread? LatticeView should be
     // encapsulated in a class, with a destructor to free texture_data. Get rid of this
     // "thread_local" nonsense.
@@ -83,7 +83,7 @@ bool make_gl_texture_from_lattice(
     uint32_t cluster_color {blue};  // Color of largest cluster
     uint32_t cluster_color_increment {0x09315700};
     data->for_each_cluster(
-      [&] (Cluster cluster) {
+      [&] (const Cluster &cluster) {
         for (const auto site : cluster) {
           texture_data[site.y * width + site.x] = cluster_color;
         }
@@ -132,13 +132,15 @@ void Latticeview(const Lattice* data, bool redraw, PercolationMode percolation_m
   IM_ASSERT(glIsTexture(image_texture));
 
   auto window {ImGui::GetCurrentWindow()};
-  if (window->SkipItems)
+  if (window->SkipItems) {
     return;
+  }
   const ImVec2 pos {window->DC.CursorPos};
   const ImVec2 frame_size {ImGui::GetContentRegionAvail()};
   const ImRect frame(pos, pos + frame_size);
-  if (!ImGui::ItemAdd(frame, 0))
+  if (!ImGui::ItemAdd(frame, 0)) {
     return;
+  }
 
   ImGui::Image((void*)(intptr_t)image_texture, ImVec2(frame.GetWidth(), frame.GetHeight()));
 
