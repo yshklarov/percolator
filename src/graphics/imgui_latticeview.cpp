@@ -1,8 +1,10 @@
 // Viewport widget for ImGui. Display a percolation lattice.
 
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 
+#include "utility.h"
 #include "imgui_latticeview.h"
 #include "lattice.h"
 #include "imgui/imgui.h"
@@ -24,8 +26,8 @@ bool make_gl_texture_from_lattice(
       const Lattice* data,
       GLuint* out_texture,
       PercolationMode percolation_mode) {
-  int width {data->get_width()};
-  int height {data->get_height()};
+  unsigned int width {data->get_width()};
+  unsigned int height {data->get_height()};
 
   // Textures can be very large: No point in reallocating unless the size has changed.
   static auto must_reallocate {true};
@@ -52,10 +54,13 @@ bool make_gl_texture_from_lattice(
   // TODO Idea: Pass the entire block of data in the lattice to a shader, and do the color
   // translation on the GPU.
   constexpr uint32_t grey = 0x202020FF;
+  constexpr uint32_t red = 0x0000FFFF;
+  constexpr uint32_t green = 0x00FF00FF;
   constexpr uint32_t blue = 0x004CFFFF;
   constexpr uint32_t cyan = 0x2CCDFFFF;
   constexpr uint32_t black = 0x000000FF;
   constexpr uint32_t white = 0xFFFFFFFF;
+  std::atomic_bool until_completion {true};
   data->for_each_site(
     [&] (const int x, const int y) {
       uint32_t site_color {white};
@@ -73,11 +78,12 @@ bool make_gl_texture_from_lattice(
         site_color = cyan;
         break;
       default:
+        site_color = green;
         IM_ASSERT(false);
         break;
       }
       texture_data[y*width + x] = site_color;
-    });
+    }, until_completion);
   if (percolation_mode == PercolationMode::clusters) {
     // Overlay the clusters.
     uint32_t cluster_color {blue};  // Color of largest cluster
@@ -88,7 +94,7 @@ bool make_gl_texture_from_lattice(
           texture_data[site.y * width + site.x] = cluster_color;
         }
         cluster_color += cluster_color_increment;
-      });
+      }, until_completion);
   }
 
   static GLuint texture {0};  // OpenGL texture identifier
@@ -120,16 +126,20 @@ bool make_gl_texture_from_lattice(
 }
 
 
-void Latticeview(const Lattice* data, bool redraw, PercolationMode percolation_mode) {
+// If data is nullptr then the previous data is shown again, which is much cheaper
+// computationally. If data is nullptr and there is no previous data, then an empty frame is shown.
+void Latticeview(const Lattice* data, PercolationMode percolation_mode) {
   static GLuint image_texture {0};
-  const int image_width {data->get_width()};
-  const int image_height {data->get_height()};
+  static unsigned int image_width {0};
+  static unsigned int image_height {0};
 
-  if (redraw) {
+  if (data) {
+    image_width = data->get_width();
+    image_height = data->get_height();
     auto made_texture {make_gl_texture_from_lattice(data, &image_texture, percolation_mode)};
     IM_ASSERT(made_texture);
+    IM_ASSERT(glIsTexture(image_texture));
   }
-  IM_ASSERT(glIsTexture(image_texture));
 
   auto window {ImGui::GetCurrentWindow()};
   if (window->SkipItems) {
@@ -142,6 +152,13 @@ void Latticeview(const Lattice* data, bool redraw, PercolationMode percolation_m
     return;
   }
 
+  if (!glIsTexture(image_texture)) {
+    // There's nothing to draw, not even from previous calls.
+    return;
+  }
+
+  // For usage of ImGui::Image, see:
+  // https://github.com/ocornut/imgui/wiki/Image-Loading-and-Displaying-Examples#About-texture-coordinates
   ImGui::Image((void*)(intptr_t)image_texture, ImVec2(frame.GetWidth(), frame.GetHeight()));
 
   // Render border, unless zoomed out too far.
@@ -151,7 +168,7 @@ void Latticeview(const Lattice* data, bool redraw, PercolationMode percolation_m
     int thickness {std::max(1, (int)((resolution - 20.0F) / 16.0F))};
     // Prevent antialiasing when thickness is even.
     float offset {thickness % 2 == 0 ? 0.5F : 0.0F};
-    float alpha {static_cast<float>(fmin(1.0F, fmax(0.0F, (resolution - 20.0F) / 20.0F)))};
+    float alpha {clamp((resolution - 20.0F) / 20.0F, 0.0F, 1.0F)};
     auto border_color = ImGui::GetColorU32(ImVec4(0.0F, 0.0F, 0.0F, alpha));
     for (auto y {1}; y < image_height; ++y) {
       // Calling floor() prevents ImGui from doing antialiasing when thickness == 1.

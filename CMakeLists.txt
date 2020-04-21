@@ -83,6 +83,13 @@ if(ENABLE_IPO)
   endif()
 endif()
 
+option(ENABLE_TBB
+  "Build with TBB (Threading Building Blocks)"
+  OFF)
+if(ENABLE_TBB)
+  add_compile_definitions(HAVE_TBB)
+endif()
+
 
 option(ENABLE_CLANG_TIDY
   "Enable static code analysis with clang-tidy"
@@ -125,7 +132,7 @@ endif()
 ################
 # Libraries setup
 
-include_directories("extern/glad/include")
+include_directories("src" "extern/glad/include")
 
 if(UNIX)
   include(FindPkgConfig)
@@ -181,12 +188,26 @@ endif()
 # This project
 
 add_library(
+  utility STATIC
+  src/utility.cpp
+  src/utility.h)
+
+add_library(
   lattice STATIC
   src/lattice.cpp
   src/lattice.h)
 if(UNIX)
-  target_link_libraries(lattice PUBLIC stdc++ m)
+  target_link_libraries(lattice PUBLIC stdc++ m pthread)
+  if(ENABLE_TBB)
+    target_link_libraries(lattice PUBLIC tbb)
+  endif()
 endif()
+
+add_library(
+  supervisor STATIC
+  src/supervisor.cpp
+  src/supervisor.h)
+target_link_libraries(supervisor PRIVATE utility)
 
 add_library(
   imgui_latticeview STATIC
@@ -207,7 +228,7 @@ add_executable(${main_exe} src/main.cpp ${PLATFORM_RESOURCES})
 target_include_directories(${main_exe} PUBLIC extern/)
 target_link_libraries(
   ${main_exe} PRIVATE
-  lattice imgui_latticeview
+  utility lattice supervisor imgui_latticeview
   glad
   imgui imgui_widgets imgui_impl_glfw imgui_impl_opengl3 imgui_demo
   ${PLATFORM_LINK_LIBS})
