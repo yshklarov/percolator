@@ -233,7 +233,11 @@ target_link_libraries(
   imgui imgui_widgets imgui_impl_glfw imgui_impl_opengl3 imgui_demo
   ${PLATFORM_LINK_LIBS})
 target_compile_options( ${main_exe} PUBLIC ${compiler_warning_flags} )
-
+if(UNIX)
+  # Gold linker is faster than default linker. Threaded mode is not the default.
+  set(CMAKE_EXE_LINKER_FLAGS
+    "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=gold -Wl,--threads,--preread-archive-symbols")
+endif()
 
 ################
 # Installation
