@@ -79,6 +79,10 @@ void Supervisor::set_flow_direction(FlowDirection direction) {
   flow_direction = direction;
 }
 
+void Supervisor::set_torus(bool is_torus) {
+  torus = is_torus;
+}
+
 void Supervisor::flood_entryways() {
   request_mutex.lock();
   flood_entryways_requested = true;
@@ -402,6 +406,7 @@ void Supervisor::worker() {
       running_percolation = true;
       changed_since_copy = true;
       lattice->set_flow_direction(flow_direction);
+      lattice->set_torus(torus);
       lattice->flow_fully(std::ref(running_percolation));
       lattice_mutex.unlock();
       if (running_percolation) {
@@ -414,6 +419,7 @@ void Supervisor::worker() {
       lattice_mutex.lock();
       running_percolation = true;
       changed_since_copy = true;
+      lattice->set_torus(torus);
       lattice->find_clusters(std::ref(running_percolation));
       if (running_percolation) {
         lattice->sort_clusters();
@@ -431,6 +437,7 @@ void Supervisor::worker() {
       running = true;
       changed_since_copy = true;
       lattice->set_flow_direction(flow_direction);
+      lattice->set_torus(torus);
       bool did_flow {lattice->flow_one_step(std::ref(running))};
       lattice_mutex.unlock();
       if (running) {

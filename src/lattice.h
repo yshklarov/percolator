@@ -35,51 +35,22 @@ using Cluster = std::vector<Site>;
 
 class Lattice {
 public:
-  // The constructor allocates but does not initialize the lattice. You must call fill() on a
-  // Lattice object after creating it.
-  Lattice (unsigned int width, unsigned int height)
-      : grid_width {width}
-      , grid_height {height}
-      , grid {nullptr}
-      , begun_percolation {false}
-      , flow_direction {FlowDirection::all_sides}
-  {
-    allocate_grid();
-  }
-
-  ~Lattice() {
-    clear_clusters();
-    delete[] grid;
-  }
-
-  // TODO Write copy and move constructors
+  Lattice (unsigned int width, unsigned int height);
+  ~Lattice();
   Lattice () =delete;
-  Lattice (const Lattice& rhs)
-    : grid_width {rhs.grid_width}
-    , grid_height {rhs.grid_height}
-    , begun_percolation {rhs.begun_percolation}
-    , flow_direction {rhs.flow_direction}
-    , freshly_flooded {rhs.freshly_flooded}
-    , current_cluster {rhs.current_cluster}
-  {
-    allocate_grid();
-    std::memcpy(grid, rhs.grid, grid_width * grid_height);
-    for (auto rhs_cluster : rhs.clusters) {
-      Cluster* cluster = new Cluster(*rhs_cluster);
-      clusters.emplace_back(cluster);
-    }
-  }
+  Lattice (const Lattice& rhs);
   Lattice (Lattice&&) =delete;
   Lattice& operator=(const Lattice&) =delete;
   Lattice& operator=(Lattice&&) =delete;
 
   void resize(unsigned int width, unsigned int height);
 
-  unsigned int get_width () const { return grid_width; }
-  unsigned int get_height () const { return grid_height; }
+  unsigned int get_width() const;
+  unsigned int get_height() const;
 
   FlowDirection get_flow_direction();
   void set_flow_direction(FlowDirection direction);
+  void set_torus(bool is_torus);
 
   void fill(measure::filler gen, std::atomic_bool &run);
 
@@ -92,31 +63,21 @@ public:
   bool done_percolation();
   void reset_percolation();
 
-  SiteStatus site_status(int x, int y) const {
-    return grid_get(x,y);
-  }
-  bool is_open(int x, int y) const {
-    return grid_get(x,y) == SiteStatus::open;
-  }
-  bool is_flooded(int x, int y) const {
-    return
-      grid_get(x,y) == SiteStatus::flooded or
-      grid_get(x,y) == SiteStatus::freshly_flooded;
-  }
-  bool is_freshly_flooded(int x, int y) const {
-    // This is faster than searching the vector freshly_flooded.
-    return grid_get(x,y) == SiteStatus::freshly_flooded;
-  }
+  SiteStatus site_status(int x, int y) const;
+  bool is_open(int x, int y) const;
+  bool is_flooded(int x, int y) const;
+  bool is_freshly_flooded(int x, int y) const;
 
   void for_each_site(std::function<void (int, int)> f, std::atomic_bool &run) const;
   void for_each_cluster(std::function<void (Cluster)> f, std::atomic_bool &run) const;
 
 private:
+  SiteStatus* grid;
   unsigned int grid_width;
   unsigned int grid_height;
-  SiteStatus* grid;  // Flat layout for speed.
   bool begun_percolation;
   FlowDirection flow_direction;
+  bool torus {false};
   std::vector<Site> freshly_flooded;
 
   // For some reason, sorting a vector of raw pointers is *much* faster than sorting a vector of
@@ -125,16 +86,13 @@ private:
   std::vector<Cluster*> clusters;
   Cluster current_cluster;
 
+  bool flow_one_step_torus(std::atomic_bool &run);
   void flow_fully_(bool track_cluster, std::atomic_bool &run);
   void allocate_grid();
   void clear_clusters();
 
-  inline SiteStatus grid_get(int x, int y) const {
-    return grid[y * grid_width + x];
-  }
-  inline void grid_set(int x, int y, SiteStatus new_status) {
-    grid[y * grid_width + x] = new_status;
-  }
+  SiteStatus grid_get(int x, int y) const;
+  void grid_set(int x, int y, SiteStatus new_status);
 };
 
 #endif  // LATTICE_H

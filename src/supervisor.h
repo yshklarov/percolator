@@ -25,6 +25,7 @@ public:
   void fill();
   void purge_stale_operations();
   void set_flow_direction(FlowDirection direction);
+  void set_torus(bool is_torus);
   void flood_entryways();
   void flow_n_steps(unsigned int n);
   void flow_fully();
@@ -64,6 +65,7 @@ private:
   std::mutex cluster_sizes_mutex;
   std::atomic_size_t max_cluster_size {0};
   FlowDirection flow_direction;
+  std::atomic_bool torus;
 
   std::atomic_bool flowing {false};
   std::mutex flowing_mutex;

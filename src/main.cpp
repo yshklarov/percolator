@@ -31,13 +31,12 @@ enum class MeasureID : int
 const char* MeasureIDNames[]
     {"Bernoulli", "Open", "Test Pattern 1", "Test Pattern 2", "Test Pattern 3"};
 
-
-static void HelpMarker(const char* desc) {
+static void help_marker(const char* help_text) {
   ImGui::TextDisabled("(?)");
   if (ImGui::IsItemHovered()) {
     ImGui::BeginTooltip();
     ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0F);
-    ImGui::TextUnformatted(desc);
+    ImGui::TextUnformatted(help_text);
     ImGui::PopTextWrapPos();
     ImGui::EndTooltip();
   }
@@ -334,25 +333,41 @@ int main(int, char**) {
   auto lattice_window_visible {true};
   auto about_window_visible {false};
 
-  auto lattice_size {30};  // Always square, for now.
+  auto lattice_size {250};  // Always square, for now.
 
   auto gui_measure {MeasureID::bernoulli};
   const float rect_site_percolation_threshold {0.59274605F};
   float bernoulli_p {rect_site_percolation_threshold};
 
-  auto percolation_mode {PercolationMode::flow};
-  float flow_speed {10.0F};
-  FlowDirection flow_direction {FlowDirection::top};
-  auto auto_percolate {false};
+  auto percolation_mode {PercolationMode::clusters};
+  float flow_speed {20.0F};
+  FlowDirection flow_direction {FlowDirection::all_sides};
+  bool torus {true};
+  auto auto_percolate {true};
   auto auto_flow {false};
-  auto auto_find_clusters {false};
-
+  auto auto_find_clusters {true};
 
   // A supervisor oversees a single lattice. TODO Sync up measure here with gui_measure.
   auto supervisor {Supervisor(lattice_size, lattice_size, measure::pattern_3())};
-  regenerate_lattice(supervisor, gui_measure, bernoulli_p);
   supervisor.set_flow_speed(flow_speed);
   supervisor.set_flow_direction(flow_direction);
+  supervisor.set_torus(torus);
+
+  auto do_autos_if_needed {
+    [&]() {
+      if (percolation_mode == PercolationMode::flow) {
+        if (auto_percolate) {
+          supervisor.flow_fully();
+        } else if (auto_flow) {
+          supervisor.start_flow();
+        }
+      } else if (percolation_mode == PercolationMode::clusters and auto_find_clusters) {
+        supervisor.find_clusters();
+      }
+    }};
+
+  regenerate_lattice(supervisor, gui_measure, bernoulli_p);
+  do_autos_if_needed();
 
   // Main loop
   while (!glfwWindowShouldClose(window)) {
@@ -416,16 +431,7 @@ int main(int, char**) {
             if (lattice_size != previous_lattice_size) {
               supervisor.set_size(lattice_size, lattice_size);
               regenerate_lattice(supervisor, gui_measure, bernoulli_p);
-              // TODO De-duplicate this (4 copies)
-              if (percolation_mode == PercolationMode::flow) {
-                if (auto_percolate) {
-                  supervisor.flow_fully();
-                } else if (auto_flow) {
-                  supervisor.start_flow();
-                }
-              } else if (percolation_mode == PercolationMode::clusters and auto_find_clusters) {
-                supervisor.find_clusters();
-              }
+              do_autos_if_needed();
             }
           }
           // If the user releases the mouse button, don't waste time filling an old size. This
@@ -436,9 +442,18 @@ int main(int, char**) {
           }
 
           ImGui::SameLine();
-          HelpMarker("Size (= height = width) of the lattice. Ctrl-click for keyboard input.");
-          ImGui::Spacing();
-          ImGui::Spacing();
+          help_marker("Size (= height = width) of the lattice. Ctrl-click for keyboard input.");
+
+          if (ImGui::Checkbox("Torus", &torus)) {
+            supervisor.set_torus(torus);
+            supervisor.reset_percolation();
+            //regenerate_lattice(supervisor, gui_measure, bernoulli_p);
+            do_autos_if_needed();
+          }
+          ImGui::SameLine();
+          help_marker("Whether to wrap around the sides");
+
+          ImGui::Spacing(); ImGui::Spacing();
         }  // Lattice controls
 
         ImGui::SetNextTreeNodeOpen(true, ImGuiCond_FirstUseEver);
@@ -451,16 +466,7 @@ int main(int, char**) {
             if (gui_measure != previous_gui_measure) {
               supervisor.abort();
               regenerate_lattice(supervisor, gui_measure, bernoulli_p);
-              // TODO find a nicer way to do this after every call to regenerate_lattice().
-              if (percolation_mode == PercolationMode::flow) {
-                if (auto_percolate) {
-                  supervisor.flow_fully();
-                } else if (auto_flow) {
-                  supervisor.start_flow();
-                }
-              } else if (percolation_mode == PercolationMode::clusters and auto_find_clusters) {
-                supervisor.find_clusters();
-              }
+              do_autos_if_needed();
             }
           }
 
@@ -472,15 +478,7 @@ int main(int, char**) {
               bernoulli_p = clamp(bernoulli_p, 0.0F, 1.0F);
               if (bernoulli_p != previous_bernoulli_p) {
                 regenerate_lattice(supervisor, gui_measure, bernoulli_p);
-                if (percolation_mode == PercolationMode::flow) {
-                  if (auto_percolate) {
-                    supervisor.flow_fully();
-                  } else if (auto_flow) {
-                    supervisor.start_flow();
-                  }
-                } else if (percolation_mode == PercolationMode::clusters and auto_find_clusters) {
-                  supervisor.find_clusters();
-                }
+                do_autos_if_needed();
               }
             }
             // For responsiveness (see comment below lattice size slider)
@@ -489,22 +487,14 @@ int main(int, char**) {
             }
 
             ImGui::SameLine();
-            HelpMarker("The probability of each site being open. Ctrl-click for keyboard input.");
+            help_marker("The probability of each site being open. Ctrl-click for keyboard input.");
             if (ImGui::Button("Randomize")) {
               // TODO Let the user choose the RNG -- there's a tradeoff between speed and quality.
               // Choices: Xorshift32, PCG, ...?
               // TODO Instead: supervisor.fill(measure).
               supervisor.abort();
               regenerate_lattice(supervisor, gui_measure, bernoulli_p);
-              if (percolation_mode == PercolationMode::flow) {
-                if (auto_percolate) {
-                  supervisor.flow_fully();
-                } else if (auto_flow) {
-                  supervisor.start_flow();
-                }
-              } else if (percolation_mode == PercolationMode::clusters and auto_find_clusters) {
-                supervisor.find_clusters();
-              }
+              do_autos_if_needed();
             }
           }
           ImGui::Spacing();
@@ -551,11 +541,8 @@ int main(int, char**) {
             if (ImGui::Button("Reset")) {
               supervisor.reset_percolation();
               auto_percolate = false;
-              if (auto_flow) {
-                supervisor.start_flow();
-              } else {
-                supervisor.stop_flow();
-              }
+              supervisor.stop_flow();
+              do_autos_if_needed();
             }
             ImGui::SameLine();
             if (ImGui::Checkbox("Auto-percolate", &auto_percolate) and auto_percolate) {
@@ -611,16 +598,17 @@ int main(int, char**) {
             }
 
             ImGui::SameLine();
-            HelpMarker("The rate of fluid flow through the lattice (in steps per second).");
+            help_marker("The rate of fluid flow through the lattice (in steps per second).");
 
             ImGui::AlignTextToFramePadding();
             ImGui::Text("Direction:"); ImGui::SameLine();
             // TODO don't do anything if same radiobutton is re-clicked.
-            if (ImGui::RadioButton("From the top",
+            if (ImGui::RadioButton(torus ? "From top / bottom" : "From top",
                                    (int *)&flow_direction, (int)FlowDirection::top)) {
               supervisor.set_flow_direction(flow_direction);
               supervisor.flood_entryways();
               if (auto_percolate) {
+                supervisor.reset_percolation();  // Clear whatever came "from all sides".
                 supervisor.flow_fully();
               }
             }

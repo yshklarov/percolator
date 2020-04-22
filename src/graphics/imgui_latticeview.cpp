@@ -87,13 +87,19 @@ bool make_gl_texture_from_lattice(
   if (percolation_mode == PercolationMode::clusters) {
     // Overlay the clusters.
     uint32_t cluster_color {blue};  // Color of largest cluster
-    uint32_t cluster_color_increment {0x09315700};
+    auto next_color {
+      [](uint32_t c) {
+        // TODO Improve this: What sequence of colors has good contrast?
+        // Perhaps try HSV instead of RGB.
+        const static uint32_t cluster_color_increment {0x1A316A00};
+        return c + cluster_color_increment;
+      }};
     data->for_each_cluster(
       [&] (const Cluster &cluster) {
         for (const auto site : cluster) {
           texture_data[site.y * width + site.x] = cluster_color;
         }
-        cluster_color += cluster_color_increment;
+        cluster_color = next_color(cluster_color);
       }, until_completion);
   }
 
@@ -103,9 +109,9 @@ bool make_gl_texture_from_lattice(
     glBindTexture(GL_TEXTURE_2D, texture);
 
     // Set up filtering parameters for display.
-    // This may look backwards, but it's correct: We need nearest-neighbour (GL_NEAREST) when blowing
-    // up because we want big pixels to show up as squares, and we want interpolation (GL_LINEAR)
-    // when shrinking a texture to fit, so that it looks nicer. Speed isn't an issue here.
+    // This may look backwards, but: We need nearest-neighbour (GL_NEAREST) when blowing up because
+    // we want big pixels to show up as squares, and we want interpolation (GL_LINEAR) when
+    // shrinking a texture to fit, so that it looks nicer. Speed isn't an issue here.
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
@@ -113,7 +119,8 @@ bool make_gl_texture_from_lattice(
   }
 
   // TODO When downsampling, we can get a Moire pattern. So do our own interpolation instead.
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8, texture_data);
+  glTexImage2D(
+    GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8, texture_data);
   if (must_reallocate) {
     // Free old texture explicitly to fix animation jitter. "glDeleteTextures silently ignores 0's
     // and names that do not correspond to existing textures." -- OpenGL docs
@@ -158,7 +165,8 @@ void Latticeview(const Lattice* data, PercolationMode percolation_mode) {
   }
 
   // For usage of ImGui::Image, see:
-  // https://github.com/ocornut/imgui/wiki/Image-Loading-and-Displaying-Examples#About-texture-coordinates
+  // <https://github.com/ocornut/imgui/wiki/Image-Loading-and-Displaying-Examples \
+  //                                                    #About-texture-coordinates>
   ImGui::Image((void*)(intptr_t)image_texture, ImVec2(frame.GetWidth(), frame.GetHeight()));
 
   // Render border, unless zoomed out too far.
