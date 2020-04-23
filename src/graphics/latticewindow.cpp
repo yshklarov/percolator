@@ -132,14 +132,13 @@ void LatticeWindow::show(bool &visible) {
       ImGui::Image((void*)(intptr_t)gl_texture, frame_size, uv0, uv1);
 
       // Render grid lines, unless zoomed out too far.
-      // TODO Make this less glitchy on high zoom levels. Is there any way to "clip" the DrawList
-      // to stay inside the Image area?
       ImVec2 square_size {
         frame_size.x / (zoom_scale * gl_texture_width),
         frame_size.y / (zoom_scale * gl_texture_height)};
       float resolution {std::min(square_size.x, square_size.y)};
       if (resolution >= 20.0F) {
         auto draw_list {ImGui::GetForegroundDrawList()};
+        draw_list->PushClipRect(pos, pos + frame_size);  // Stay inside the Image area.
         int thickness {std::max(1, (int)((resolution - 20.0F) / 16.0F))};
         float offset_line {thickness % 2 == 0 ? 0.5F : 0.0F};  // prevent antialiasing
         float offset_x {fmod((1.0F - uv0.x) * frame_size.x / zoom_scale, square_size.x)};
@@ -153,17 +152,22 @@ void LatticeWindow::show(bool &visible) {
         }
         float alpha {clamp((resolution - 20.0F) / 20.0F, 0.0F, 1.0F)};
         auto border_color = ImGui::GetColorU32(ImVec4(0.0F, 0.0F, 0.0F, alpha));
-        for (auto y {pos.y}; y + offset_y < frame.Max.y; y += square_size.y) {
+        for (auto y {pos.y - square_size.y};
+             y + offset_y < frame.Max.y + square_size.y;
+             y += square_size.y) {
           // Calling floor() prevents ImGui from doing antialiasing when thickness == 1.
           auto left {ImVec2(frame.Min.x, floor(y + offset_y) + offset_line)};
           auto right {ImVec2(frame.Max.x, floor(y + offset_y) + offset_line)};
           draw_list->AddLine(left, right, border_color, (float)thickness);
         }
-        for (auto x {pos.x}; x + offset_x < frame.Max.x; x += square_size.x) {
+        for (auto x {pos.x - square_size.x};
+             x + offset_x < frame.Max.x + square_size.x;
+             x += square_size.x) {
           auto top {ImVec2(floor(x + offset_x) + offset_line, frame.Min.y)};
           auto bot {ImVec2(floor(x + offset_x) + offset_line, frame.Max.y)};
           draw_list->AddLine(top, bot, border_color, (float)thickness);
         }
+        draw_list->PopClipRect();
       }
     }
   }  // Frame holding the lattice
