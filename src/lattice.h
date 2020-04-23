@@ -25,7 +25,7 @@ public:
     : x {x_coord}
     , y {y_coord}
     {}
-  Site () =delete;
+  Site() =delete;
   // TODO Write copy and move constructors?
   int x;
   int y;
@@ -37,9 +37,11 @@ class Lattice {
 public:
   Lattice (unsigned int width, unsigned int height);
   ~Lattice();
-  Lattice () =delete;
-  Lattice (const Lattice& rhs);
-  Lattice (Lattice&&) =delete;
+
+  // TODO Write all copy/move constructors
+  Lattice() =delete;
+  Lattice(const Lattice& rhs);
+  Lattice(Lattice&&) =delete;
   Lattice& operator=(const Lattice&) =delete;
   Lattice& operator=(Lattice&&) =delete;
 
@@ -59,7 +61,7 @@ public:
   void flow_fully(std::atomic_bool &run);
   void find_clusters(std::atomic_bool &run);
   void sort_clusters();
-  unsigned int num_clusters();
+  unsigned int num_clusters() const;
   bool done_percolation();
   void reset_percolation();
 
@@ -81,8 +83,10 @@ private:
   std::vector<Site> freshly_flooded;
 
   // For some reason, sorting a vector of raw pointers is *much* faster than sorting a vector of
-  // vectors. But why? The difference in memory is not that large:
-  // sizeof(&Cluster) == 8; sizeof(Cluster) == 24.
+  // vectors. But why? The difference in memory is not that large: sizeof(&Cluster) == 8;
+  // sizeof(Cluster) == 24.
+  // TODO Keep clusters in our own contiguous data structure: Otherwise, allocating/deallocating
+  // all clusters is very slow, which includes e.g. destructing a Lattice.
   std::vector<Cluster*> clusters;
   Cluster current_cluster;
 

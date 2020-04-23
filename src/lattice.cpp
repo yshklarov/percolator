@@ -31,7 +31,6 @@ Lattice::~Lattice() {
 }
 
 // Copy constructor
-// TODO Write all copy/move constructors
 Lattice::Lattice (const Lattice& rhs)
   : grid_width {rhs.grid_width}
   , grid_height {rhs.grid_height}
@@ -339,7 +338,7 @@ void Lattice::sort_clusters() {
     });
 }
 
-unsigned int Lattice::num_clusters() {
+unsigned int Lattice::num_clusters() const {
   return clusters.size();
 }
 
@@ -376,8 +375,8 @@ bool Lattice::is_freshly_flooded(int x, int y) const {
 }
 
 void Lattice::for_each_site(std::function<void (int, int)> f, std::atomic_bool &run) const {
-  for (auto y {0}; y < grid_height and run; ++y) {
-    for (auto x {0}; x < grid_width; ++x) {
+  for (auto y {0}; y < grid_height && run; ++y) {
+    for (auto x {0}; x < grid_width && run; ++x) {
       f(x, y);
     }
   }
@@ -385,8 +384,8 @@ void Lattice::for_each_site(std::function<void (int, int)> f, std::atomic_bool &
 
 void Lattice::for_each_cluster(std::function<void (Cluster)> f, std::atomic_bool &run) const {
   for (auto cluster : clusters) {
-    f(*cluster);
     if (!run) { break; }
+    f(*cluster);
   }
 }
 

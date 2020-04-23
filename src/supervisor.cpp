@@ -19,20 +19,19 @@ Supervisor::Supervisor(unsigned int width, unsigned int height, measure::filler 
   , flow_direction {FlowDirection::top}
   , worker_thread { [this]() { worker(); } }
 {
-  fill();
+  lattice_mutex.lock();
+  lattice = new Lattice(1, 1);
+  lattice_mutex.unlock();
 }
 
 Supervisor::~Supervisor() {
-  stop_flow();
-
   // Terminate worker thread
   request_mutex.lock();
   terminate_requested = true;
   request_mutex.unlock();
-  running = false;
-  running_fill = false;
-  running_percolation = false;
-  running_reset = false;
+
+  stop_flow();
+  abort();
   worker_thread.join();
 
   lattice_mutex.lock();
@@ -57,12 +56,18 @@ void Supervisor::set_measure(measure::filler f) {
 // Replaces the lattice by a new one, randomly filled.
 void Supervisor::fill() {
   request_mutex.lock();
+  // Reset all other requests to prevent race conditions.
+  reset_requested = false;
+  flood_entryways_requested = false;
   fill_requested = true;
+  flow_fully_requested = false;
+  flow_steps_requested = 0;
+  find_clusters_requested = false;
   request_mutex.unlock();
 }
 
 // Stop doing tasks that have duplicates already queued up.
-void Supervisor::purge_stale_operations() {
+void Supervisor::abort_stale_operations() {
   request_mutex.lock();
   if (running_fill && fill_requested) {
     // Start over filling immediately.
@@ -110,7 +115,6 @@ void Supervisor::start_flow() {
       flowing = true;
       flow_start_time = std::chrono::high_resolution_clock::now();
       while(flowing) {
-        // This mutex only exists for the condition variable.
         std::unique_lock<std::mutex> lock {flowing_mutex};
         auto steps_per_second {flow_speed.load()};
         auto now = std::chrono::high_resolution_clock::now();
@@ -135,6 +139,9 @@ void Supervisor::stop_flow() {
     flowing_abort.notify_all();
     flowing_mutex.unlock();
     flow_thread.wait(); // Should terminate very soon.
+    request_mutex.lock();
+    flow_steps_requested = 0;
+    request_mutex.unlock();
   }
 }
 
@@ -155,23 +162,20 @@ void Supervisor::find_clusters() {
 }
 
 unsigned int Supervisor::num_clusters() {
-  if (!lattice || !lattice_mutex.try_lock()) {
+  std::unique_lock<std::mutex> lock(lattice_mutex, std::try_to_lock);
+  if (!lock.owns_lock() || !lattice) {
     return 0;
   }
   auto num {lattice->num_clusters()};
-  lattice_mutex.unlock();
   return num;
 }
 
 bool Supervisor::done_percolation() {
-  if (!lattice) {
-    return false;
-  }
-  if (!lattice_mutex.try_lock()) {
-    return false;
+  std::unique_lock<std::mutex> lock(lattice_mutex, std::try_to_lock);
+  if (!lock.owns_lock() || !lattice) {
+    return 0;
   }
   auto done {lattice->done_percolation()};
-  lattice_mutex.unlock();
   return done;
 }
 
@@ -208,35 +212,48 @@ float Supervisor::cluster_largest_proportion() {
   return base * max_cluster_size / (lattice_width * lattice_height);
 }
 
-// If the lattice has changed since the last time this function was called, calls
-// f(lattice). Otherwise, or if a copy of the lattice isn't available yet, calls
-// f(nullptr). Synchronous.
-void Supervisor::give_lattice_to(std::function<void (Lattice*)> f) {
-  if (lattice_copy_mutex.try_lock()) {
-    if (lattice_copy) {
-      f(lattice_copy);
-      delete lattice_copy;
-      lattice_copy = nullptr;
-    } else {
-      if (changed_since_copy) {
-        request_mutex.lock();
-        lattice_copy_requested = true;
-        request_mutex.unlock();
-      }
-      f(nullptr);
+// If the lattice has changed since the last time this function was called, tries to return a
+// pointer to a copy of the lattice. If the lattice hasn't changed, returns nullptr.  If the
+// lattice is busy being copied, returns nullptr, unless this has been happening for at least
+// copy_timeout_ms milliseconds, in which case it waits for the copy and then returns it.
+// The caller is responsible for freeing the memory later, e.g.,
+// Lattice* copy {get_lattice_copy}; ...; delete copy;
+Lattice* Supervisor::get_lattice_copy(double copy_timeout_ms) {
+  bool acquired {lattice_copy_mutex.try_lock()};
+  static Stopwatch stopwatch;
+  if (!acquired) {
+    if (!stopwatch.is_running()) {
+      stopwatch.start();
+      return nullptr;
+    } else if (stopwatch.elapsed_ms() >= copy_timeout_ms) {
+      lattice_copy_mutex.lock();
+      acquired = true;
     }
-    lattice_copy_mutex.unlock();
-  } else {
-    f(nullptr);
   }
+
+  if (acquired) {
+    ScopeGuard sg {[&]() { lattice_copy_mutex.unlock(); }};
+    if (lattice_copy) {
+      auto tmp = lattice_copy;
+      lattice_copy = nullptr;
+      return tmp;
+    }
+    if (changed_since_copy) {
+      request_mutex.lock();
+      lattice_copy_requested = true;
+      request_mutex.unlock();
+    }
+  }
+  return nullptr;
 }
 
 // Returns a string if a computation is currently in progress.
-// TODO add timer: only busy if has been busy for n milliseconds. E.g., busy_for(100);
-// busy_for(0): returns true if has been busy on the same job for at least n ms.
 std::optional<std::string> Supervisor::busy() {
   if (running_cluster_sizes) {
     return "Computing cluster sizes";
+  }
+  if (running_copy) {
+    return "Copying lattice";
   }
   if (running_fill) {
     return "Filling lattice";
@@ -270,9 +287,12 @@ void Supervisor::abort() {
   request_mutex.lock();
 
   running = false;
+  running_cluster_sizes = false;
+  //running_copy = false;  // There's no way to abort a copy yet.
   running_fill = false;
   running_percolation = false;
   running_reset = false;
+
   reset_requested = false;
   flood_entryways_requested = false;
   fill_requested = false;
@@ -288,11 +308,14 @@ void Supervisor::make_lattice_copy_if_needed() {
     lattice_copy_requested = false;
     request_mutex.unlock();
     lattice_copy_mutex.lock();
+    running_copy = true;
     delete lattice_copy;
     lattice_mutex.lock();
+    // TODO Allow abort in the middle of a copy operation, if running_copy is made false.
     lattice_copy = new Lattice(*lattice);
     changed_since_copy = false;
     lattice_mutex.unlock();
+    running_copy = false;
     lattice_copy_mutex.unlock();
   } else {
     request_mutex.unlock();
@@ -317,9 +340,17 @@ void Supervisor::compute_cluster_sizes() {
 }
 
 void Supervisor::worker() {
+  bool skip_copy {false};
+  request_mutex.lock();
   while (!terminate_requested) {
+    request_mutex.unlock();
+    if (!skip_copy) {
+      make_lattice_copy_if_needed();
+    }
+    skip_copy = false;
+
+    // TODO Make this less ugly and less buggy.
     request_mutex.lock();
-    // TODO De-duplicate this
     if (reset_requested) {
       reset_requested = false;
       request_mutex.unlock();
@@ -329,18 +360,18 @@ void Supervisor::worker() {
       lattice->reset_percolation();
       lattice_mutex.unlock();
 
-      // Don't make a lattice copy after resetting, unless there's nothing more to do.
       request_mutex.lock();
-      if (!flow_fully_requested && !find_clusters_requested && flow_steps_requested == 0) {
-        request_mutex.unlock();
-        if (running_reset) {
-          make_lattice_copy_if_needed();
-        }
-      } else {
-        request_mutex.unlock();
+      if (!running_reset ||
+          flow_fully_requested ||
+          find_clusters_requested ||
+          flow_steps_requested != 0) {
+        // Don't send a copy over to the GUI yet.
+        skip_copy = true;
       }
+      request_mutex.unlock();
+
       running_reset = false;
-    } else if (lattice && flood_entryways_requested) {
+    } else if (flood_entryways_requested) {
       flood_entryways_requested = false;
       request_mutex.unlock();
       lattice_mutex.lock();
@@ -349,9 +380,6 @@ void Supervisor::worker() {
       lattice->set_flow_direction(flow_direction);
       lattice->flood_entryways();
       lattice_mutex.unlock();
-      if (running) {
-        make_lattice_copy_if_needed();
-      }
       running = false;
     } else if (fill_requested) {
       fill_requested = false;
@@ -382,22 +410,18 @@ void Supervisor::worker() {
       lattice->fill(lm, std::ref(running_fill));
       lattice_mutex.unlock();
 
-      // Don't make a lattice copy after filling, unless there's nothing more to do. If we made a
-      // lattice copy here, the GUI would sometimes briefly show an un-percolated lattice when it
-      // isn't desired.
       request_mutex.lock();
-      if (!flow_fully_requested && !find_clusters_requested && flow_steps_requested == 0) {
-        // TODO Fix bug: If the user slides the size slider with auto-percolate on, sometimes we
-        // just fill and re-fill and never get to percolation, so nothing is ever shown until the
-        // user stops.
-        request_mutex.unlock();
-        if (running_fill) {
-          make_lattice_copy_if_needed();
-        }
-      } else {
-        request_mutex.unlock();
+      if (!running_fill) {
+        skip_copy = true;  // Operation was aborted.
       }
       running_fill = false;
+      if (flow_fully_requested || find_clusters_requested) {
+        request_mutex.unlock();
+        // If we made a lattice copy here, the GUI would sometimes briefly show an un-percolated
+        // lattice when it isn't wanted.
+        skip_copy = true;
+      }
+      request_mutex.unlock();
     } else if (flow_fully_requested) {
       flow_fully_requested = false;
       flow_steps_requested = 0;
@@ -409,8 +433,8 @@ void Supervisor::worker() {
       lattice->set_torus(torus);
       lattice->flow_fully(std::ref(running_percolation));
       lattice_mutex.unlock();
-      if (running_percolation) {
-        make_lattice_copy_if_needed();
+      if (!running_percolation) {
+        skip_copy = true;  // Operation was aborted.
       }
       running_percolation = false;
     } else if (find_clusters_requested) {
@@ -425,11 +449,13 @@ void Supervisor::worker() {
         lattice->sort_clusters();
       }
       lattice_mutex.unlock();
-      if (running_percolation) {
-        make_lattice_copy_if_needed();
+      if (running_percolation) {  // Unless aborted
+        make_lattice_copy_if_needed();  // Computing sizes first is unnecessary
+        compute_cluster_sizes();
+      } else {
+        skip_copy = true;
       }
       running_percolation = false;
-      compute_cluster_sizes();
     } else if (flow_steps_requested > 0) {
       flow_steps_requested -= 1;
       request_mutex.unlock();
@@ -440,18 +466,18 @@ void Supervisor::worker() {
       lattice->set_torus(torus);
       bool did_flow {lattice->flow_one_step(std::ref(running))};
       lattice_mutex.unlock();
-      if (running) {
-        make_lattice_copy_if_needed();
-      }
-      running = false;
-      if (flowing && !did_flow) {
+      if (!did_flow) {
         stop_flow();
       }
+      if (!running) {
+        skip_copy = true;  // Operation was aborted.
+      }
+      running = false;
     } else {
       // Nothing to do
       request_mutex.unlock();
-      make_lattice_copy_if_needed();
       pause_ms(8); // TODO Wait for a condition variable instead
     }
   }  // while (!terminated)
+  request_mutex.unlock();
 }  // worker()

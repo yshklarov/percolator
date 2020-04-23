@@ -210,10 +210,10 @@ add_library(
 target_link_libraries(supervisor PRIVATE utility)
 
 add_library(
-  imgui_latticeview STATIC
-  src/graphics/imgui_latticeview.cpp
-  src/graphics/imgui_latticeview.h)
-target_include_directories(imgui_latticeview PRIVATE extern/ src/)
+  latticewindow STATIC
+  src/graphics/latticewindow.cpp
+  src/graphics/latticewindow.h)
+target_include_directories(latticewindow PRIVATE extern/ src/)
 
 if(UNIX)
   set(PLATFORM_RESOURCES "")
@@ -228,7 +228,7 @@ add_executable(${main_exe} src/main.cpp ${PLATFORM_RESOURCES})
 target_include_directories(${main_exe} PUBLIC extern/)
 target_link_libraries(
   ${main_exe} PRIVATE
-  utility lattice supervisor imgui_latticeview
+  utility lattice supervisor latticewindow
   glad
   imgui imgui_widgets imgui_impl_glfw imgui_impl_opengl3 imgui_demo
   ${PLATFORM_LINK_LIBS})

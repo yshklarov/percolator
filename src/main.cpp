@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <cassert>
 #include <iostream>
 #include <map>
 #include <string>
@@ -21,7 +20,7 @@
 
 #include "lattice.h"
 #include "supervisor.h"
-#include "graphics/imgui_latticeview.h"
+#include "graphics/latticewindow.h"
 
 // TODO Find a better way of dealing with this and regenerate_lattice().
 // Required by ImGui Combo menu. Make sure to keep ID and IDNames in the same order, or the
@@ -90,7 +89,7 @@ void regenerate_lattice(Supervisor &supervisor, const MeasureID gui_measure, con
     supervisor.set_measure(measure::bernoulli(p));
     break;
   default:
-    assert(false);
+    IM_ASSERT(false);
     break;
   }
   supervisor.fill();
@@ -353,6 +352,8 @@ int main(int, char**) {
   supervisor.set_flow_direction(flow_direction);
   supervisor.set_torus(torus);
 
+  LatticeWindow lattice_window {"Lattice"};
+
   auto do_autos_if_needed {
     [&]() {
       if (percolation_mode == PercolationMode::flow) {
@@ -395,14 +396,15 @@ int main(int, char**) {
     {
       if (ImGui::Begin("Control")) {
         // Leave spacing for the line(s) at the bottom of the window.
-#ifndef DEVEL_FEATURES
-#define nlines 2
+#ifdef DEVEL_FEATURES
+#define text_lines 2  // Message & framerate display
 #else
-#define nlines 3
+#define text_lines 1  // Message
 #endif
         const float footer_height_to_reserve {
           ImGui::GetStyle().ItemSpacing.y +  // Separator
-          nlines * ImGui::GetFrameHeightWithSpacing()}; // Buttons
+          ImGui::GetFrameHeightWithSpacing() +  // Checkboxes
+          text_lines * ImGui::GetTextLineHeightWithSpacing()};
         ImGui::BeginChild("Main controls", ImVec2(0, - footer_height_to_reserve));
 
         ImGui::SetNextTreeNodeOpen(true, ImGuiCond_FirstUseEver);
@@ -429,6 +431,7 @@ int main(int, char**) {
             lattice_size_f = clamp(lattice_size_f, min_size_f, max_size_f);
             lattice_size = clamp(lattice_size, min_size, max_size);
             if (lattice_size != previous_lattice_size) {
+              supervisor.stop_flow();
               supervisor.set_size(lattice_size, lattice_size);
               regenerate_lattice(supervisor, gui_measure, bernoulli_p);
               do_autos_if_needed();
@@ -438,7 +441,8 @@ int main(int, char**) {
           // keeps the user interface responsive. Note that we don't want to call this if the user
           // hasn't released the mouse button, or else dragging the slider wouldn't look clean.
           if (ImGui::IsItemHovered() && ImGui::IsMouseReleased(0)) {
-            supervisor.purge_stale_operations();
+            supervisor.abort_stale_operations();
+            lattice_window.mark_render_disposable();
           }
 
           ImGui::SameLine();
@@ -447,7 +451,6 @@ int main(int, char**) {
           if (ImGui::Checkbox("Torus", &torus)) {
             supervisor.set_torus(torus);
             supervisor.reset_percolation();
-            //regenerate_lattice(supervisor, gui_measure, bernoulli_p);
             do_autos_if_needed();
           }
           ImGui::SameLine();
@@ -477,13 +480,15 @@ int main(int, char**) {
               // See comment at lattice_size SliderScalar).
               bernoulli_p = clamp(bernoulli_p, 0.0F, 1.0F);
               if (bernoulli_p != previous_bernoulli_p) {
+                supervisor.stop_flow();
                 regenerate_lattice(supervisor, gui_measure, bernoulli_p);
                 do_autos_if_needed();
               }
             }
             // For responsiveness (see comment below lattice size slider)
             if (ImGui::IsItemHovered() && ImGui::IsMouseReleased(0)) {
-              supervisor.purge_stale_operations();
+              supervisor.abort_stale_operations();
+              lattice_window.mark_render_disposable();
             }
 
             ImGui::SameLine();
@@ -491,7 +496,6 @@ int main(int, char**) {
             if (ImGui::Button("Randomize")) {
               // TODO Let the user choose the RNG -- there's a tradeoff between speed and quality.
               // Choices: Xorshift32, PCG, ...?
-              // TODO Instead: supervisor.fill(measure).
               supervisor.abort();
               regenerate_lattice(supervisor, gui_measure, bernoulli_p);
               do_autos_if_needed();
@@ -512,7 +516,8 @@ int main(int, char**) {
             supervisor.reset_percolation();
             if (auto_percolate) {
               supervisor.flow_fully();
-              supervisor.purge_stale_operations();
+              supervisor.abort_stale_operations();
+              lattice_window.mark_render_disposable();
             } else if (auto_flow) {
               supervisor.start_flow();
             }
@@ -524,7 +529,8 @@ int main(int, char**) {
             supervisor.reset_percolation();
             if (auto_find_clusters) {
               supervisor.find_clusters();
-              supervisor.purge_stale_operations();
+              supervisor.abort_stale_operations();
+              lattice_window.mark_render_disposable();
             }
           }
 
@@ -667,6 +673,7 @@ int main(int, char**) {
                   }
                   ImGui::EndChild();
                 }
+                ImGui::TreePop();
               }
 #endif
             }
@@ -678,14 +685,25 @@ int main(int, char**) {
         ImGui::Separator();
         ImGui::NewLine();
         std::optional<std::string> busy_string {supervisor.busy()};
+        static Stopwatch stopwatch;
+        constexpr double busy_message_minimum_ms {0.0};
         if (busy_string != std::nullopt) {
-          ImGui::SameLine();
-          if (ImGui::SmallButton("Abort")) {
-            supervisor.abort();
+          if (!stopwatch.is_running()) {
+            stopwatch.start();
           }
-          ImGui::SameLine();
-          ImGui::Text("%s...", busy_string.value().c_str());
+          if (stopwatch.elapsed_ms() >= busy_message_minimum_ms) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Abort")) {
+              stopwatch.stop();
+              supervisor.abort();
+            }
+            ImGui::SameLine();
+            ImGui::Text("%s...", busy_string.value().c_str());
+          }
+        } else {
+          stopwatch.stop();
         }
+
         if (supervisor.errors_exist()) {
           ImGui::SameLine();
           ImGui::Text("Error: %s", supervisor.get_first_error().c_str());
@@ -706,14 +724,13 @@ int main(int, char**) {
 
     // Lattice window
     if (lattice_window_visible) {
-      ImGui::Begin("Lattice", &lattice_window_visible);
-      // TODO Do this in another thread so as to not hang the GUI.
-      supervisor.give_lattice_to(
-        [percolation_mode](Lattice *data) {
-          Latticeview(data, percolation_mode);
-        });
-      ImGui::End();
+      Lattice* lattice = supervisor.get_lattice_copy();
+      if (lattice) {
+        lattice_window.push_data(lattice);
+      }
+      lattice_window.show(lattice_window_visible);
     }  // Lattice window
+
 
     // End-of-frame boilerplate
 

@@ -20,10 +20,16 @@ public:
   Supervisor(unsigned int width = 1, unsigned int height = 1, measure::filler f = measure::open());
   ~Supervisor();
 
+  Supervisor() =delete;
+  Supervisor(const Lattice& rhs) =delete;
+  Supervisor(Lattice&&) =delete;
+  Supervisor& operator=(const Lattice&) =delete;
+  Supervisor& operator=(Lattice&&) =delete;
+
   void set_size(unsigned int width, unsigned int height);
   void set_measure(measure::filler f);
   void fill();
-  void purge_stale_operations();
+  void abort_stale_operations();
   void set_flow_direction(FlowDirection direction);
   void set_torus(bool is_torus);
   void flood_entryways();
@@ -40,7 +46,7 @@ public:
   auto get_cluster_sizes()
     -> std::optional<std::map<const unsigned int, unsigned int, ReverseCmp>>;
   float cluster_largest_proportion();
-  void give_lattice_to(std::function<void (Lattice*)> f);
+  Lattice* get_lattice_copy(double copy_timeout_ms = 100.0);
   std::optional<std::string> busy();
   bool errors_exist();
   void clear_one_error();
@@ -75,6 +81,7 @@ private:
 
   std::atomic_bool running {false};
   std::atomic_bool running_cluster_sizes {false};
+  std::atomic_bool running_copy {false};
   std::atomic_bool running_fill {false};
   std::atomic_bool running_percolation {false};
   std::atomic_bool running_reset {false};
