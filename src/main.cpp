@@ -740,7 +740,7 @@ int main(int, char**) {
       if (lattice) {
         lattice_window.push_data(lattice);
       }
-      lattice_window.show(lattice_window_visible, torus);
+      lattice_window.show(lattice_window_visible);
     }  // Lattice window
 
 

@@ -51,7 +51,7 @@ void LatticeWindow::push_data(Lattice* data) {
   worker_cond.notify_all();
 }
 
-void LatticeWindow::show(bool &visible, bool torus) {
+void LatticeWindow::show(bool &visible) {
   ImGui::Begin(title.c_str(), &visible);
   ScopeGuard imgui_guard_1 {[]() { ImGui::End(); }};
   auto window {ImGui::GetCurrentWindow()};
@@ -83,12 +83,12 @@ void LatticeWindow::show(bool &visible, bool torus) {
       if (mouse_wheel_input != 0) {
         float zoom_scale_old {pow(zoom_increment, (float)zoom_level)};
         zoom_level += mouse_wheel_input;
-        if (!torus) {
-          // Can't zoom out to more than 100%.
-          zoom_level = std::max(0, zoom_level);
+        if (gl_texture_wraparound) {
+          // Prevent video glitches and floating point errors.
+          zoom_level = clamp(zoom_level, min_zoom_level, max_zoom_level);
         } else {
-          // Prevent video glitches.
-          zoom_level = std::max(-10, zoom_level);
+          // Can't zoom out to more than 100%.
+          zoom_level = clamp(zoom_level, 0, max_zoom_level);
         }
         zoom_scale = pow(zoom_increment, (float)zoom_level);
         if (mouse_wheel_input && ImGui::IsMousePosValid()) {
@@ -111,10 +111,7 @@ void LatticeWindow::show(bool &visible, bool torus) {
     }
 
     // Re-adjust zoom / pan.
-
-    // TODO Fix bug: If user unchecks "torus", but the new lattice hasn't finished rendering, then
-    // the user can navigate the non-toral lattice like a toral lattice.
-    if (!torus) {
+    if (!gl_texture_wraparound) {
       // Clamp zoom level.
       zoom_level = std::max(0, zoom_level);
       zoom_scale = pow(zoom_increment, (float)zoom_level);
@@ -131,19 +128,26 @@ void LatticeWindow::show(bool &visible, bool torus) {
       ImVec2 uv1 {uv0.x + zoom_scale, uv0.y + zoom_scale};
       ImGui::Image((void*)(intptr_t)gl_texture, frame_size, uv0, uv1);
 
-      // Render border, unless zoomed out too far.
+      // Render grid lines, unless zoomed out too far.
       // TODO Make this less glitchy on high zoom levels. Is there any way to "clip" the DrawList
       // to stay inside the Image area?
-      auto draw_list {ImGui::GetForegroundDrawList()};
       ImVec2 square_size {
         frame_size.x / (zoom_scale * gl_texture_width),
         frame_size.y / (zoom_scale * gl_texture_height)};
       float resolution {std::min(square_size.x, square_size.y)};
       if (resolution >= 20.0F) {
+        auto draw_list {ImGui::GetForegroundDrawList()};
         int thickness {std::max(1, (int)((resolution - 20.0F) / 16.0F))};
         float offset_line {thickness % 2 == 0 ? 0.5F : 0.0F};  // prevent antialiasing
         float offset_x {fmod((1.0F - uv0.x) * frame_size.x / zoom_scale, square_size.x)};
         float offset_y {fmod((1.0F - uv0.y) * frame_size.y / zoom_scale, square_size.y)};
+        // Work around mathematically incorrect fmod
+        while (offset_x < 0.0F) {
+          offset_x += square_size.x;
+        }
+        while (offset_y < 0.0F) {
+          offset_y += square_size.y;
+        }
         float alpha {clamp((resolution - 20.0F) / 20.0F, 0.0F, 1.0F)};
         auto border_color = ImGui::GetColorU32(ImVec4(0.0F, 0.0F, 0.0F, alpha));
         for (auto y {pos.y}; y + offset_y < frame.Max.y; y += square_size.y) {
@@ -284,6 +288,7 @@ void LatticeWindow::paint_texture_data(const Lattice* data) {
     uint32_t* tmp {texture_data};
     texture_data = texture_data_painting;
     texture_data_painting = tmp;
+    texture_data_wraparound = data->is_torus();
     texture_data_mutex.unlock();
     texture_data_ready = true;
     painting = false;
@@ -319,5 +324,6 @@ void LatticeWindow::send_texture_data() {
   IM_ASSERT(glIsTexture(gl_texture));
   gl_texture_width = texture_data_width;
   gl_texture_height = texture_data_height;
+  gl_texture_wraparound = texture_data_wraparound;
   texture_data_mutex.unlock();
 }

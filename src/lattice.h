@@ -53,6 +53,7 @@ public:
   FlowDirection get_flow_direction();
   void set_flow_direction(FlowDirection direction);
   void set_torus(bool is_torus);
+  bool is_torus() const;
 
   void fill(measure::filler gen, std::atomic_bool &run);
 

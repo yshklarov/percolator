@@ -242,13 +242,19 @@ Lattice* Supervisor::get_lattice_copy(double copy_timeout_ms) {
       return tmp;
     }
     if (changed_since_copy) {
-      request_mutex.lock();
-      lattice_copy_requested = true;
-      request_mutex.unlock();
+      request_copy();
     }
   }
   return nullptr;
 }
+
+// Requests a copy to be made available for a subsequent call to get_lattice_copy, even if the
+// lattice hasn't been modified since the last copy.
+void Supervisor::request_copy() {
+  request_mutex.lock();
+  lattice_copy_requested = true;
+  request_mutex.unlock();
+ }
 
 // Returns a string if a computation is currently in progress.
 std::optional<std::string> Supervisor::busy() {
@@ -363,8 +369,10 @@ void Supervisor::worker() {
       request_mutex.unlock();
       lattice_mutex.lock();
       running_reset = true;
-      changed_since_copy = true;
       lattice->reset_percolation();
+      lattice->set_flow_direction(flow_direction);
+      lattice->set_torus(torus);
+      changed_since_copy = true;
       lattice_mutex.unlock();
 
       request_mutex.lock();
@@ -383,9 +391,10 @@ void Supervisor::worker() {
       request_mutex.unlock();
       lattice_mutex.lock();
       running = true;
-      changed_since_copy = true;
       lattice->set_flow_direction(flow_direction);
+      lattice->set_torus(torus);
       lattice->flood_entryways();
+      changed_since_copy = true;
       lattice_mutex.unlock();
       running = false;
     } else if (fill_requested) {
@@ -414,6 +423,7 @@ void Supervisor::worker() {
         }
       }
       lattice->set_flow_direction(flow_direction);
+      lattice->set_torus(torus);
       lattice_measure_mutex.lock();
       auto lm {lattice_measure};
       lattice_measure_mutex.unlock();
@@ -454,6 +464,7 @@ void Supervisor::worker() {
       lattice_mutex.lock();
       running_percolation = true;
       changed_since_copy = true;
+      lattice->set_flow_direction(flow_direction);
       lattice->set_torus(torus);
       lattice->find_clusters(std::ref(running_percolation));
       if (running_percolation) {

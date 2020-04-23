@@ -36,6 +36,7 @@ Lattice::Lattice (const Lattice& rhs)
   , grid_height {rhs.grid_height}
   , begun_percolation {rhs.begun_percolation}
   , flow_direction {rhs.flow_direction}
+  , torus {rhs.torus}
   , freshly_flooded {rhs.freshly_flooded}
   , current_cluster {rhs.current_cluster}
 {
@@ -72,6 +73,10 @@ void Lattice::set_flow_direction(FlowDirection direction) {
 
 void Lattice::set_torus(bool is_torus) {
   torus = is_torus;
+}
+
+bool Lattice::is_torus() const {
+  return torus;
 }
 
 // Xorshift: Fast RNG. Copied from <https://en.wikipedia.org/wiki/Xorshift>.

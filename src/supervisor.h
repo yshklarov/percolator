@@ -47,6 +47,7 @@ public:
     -> std::optional<std::map<const unsigned int, unsigned int, ReverseCmp>>;
   float cluster_largest_proportion();
   Lattice* get_lattice_copy(double copy_timeout_ms = 100.0);
+  void request_copy();
   std::optional<std::string> busy();
   bool errors_exist();
   void clear_one_error();
