@@ -50,6 +50,15 @@ void end_disable_items() {
   ImGui::PopItemFlag();
 }
 
+void push_style_hue(float hue) {
+  ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::HSV(hue, 0.6f, 0.6f));
+  ImGui::PushStyleColor(ImGuiCol_ButtonHovered, (ImVec4)ImColor::HSV(hue, 0.7f, 0.7f));
+  ImGui::PushStyleColor(ImGuiCol_ButtonActive, (ImVec4)ImColor::HSV(hue, 0.8f, 0.8f));
+}
+void pop_style_hue() {
+  ImGui::PopStyleColor(3);
+}
+
 static void glfw_error_callback(int error, const char* description) {
   std::cerr << "GLFW error " << error << ": " << description << std::endl;
 }
@@ -338,11 +347,11 @@ int main(int, char**) {
   const float rect_site_percolation_threshold {0.59274605F};
   float bernoulli_p {rect_site_percolation_threshold};
 
-  auto percolation_mode {PercolationMode::clusters};
+  auto percolation_mode {PercolationMode::flow};
   float flow_speed {20.0F};
-  FlowDirection flow_direction {FlowDirection::all_sides};
-  bool torus {true};
-  auto auto_percolate {true};
+  FlowDirection flow_direction {FlowDirection::top};
+  bool torus {false};
+  auto auto_percolate {false};
   auto auto_flow {false};
   auto auto_find_clusters {true};
 
@@ -407,7 +416,7 @@ int main(int, char**) {
           text_lines * ImGui::GetTextLineHeightWithSpacing()};
         ImGui::BeginChild("Main controls", ImVec2(0, - footer_height_to_reserve));
 
-        ImGui::SetNextTreeNodeOpen(true, ImGuiCond_FirstUseEver);
+        ImGui::SetNextTreeNodeOpen(false, ImGuiCond_FirstUseEver);
         if (ImGui::CollapsingHeader("Lattice")) {
           const int min_size {1}, max_size {10'000};
           const float min_size_f = min_size, max_size_f = max_size;
@@ -459,7 +468,7 @@ int main(int, char**) {
           ImGui::Spacing(); ImGui::Spacing();
         }  // Lattice controls
 
-        ImGui::SetNextTreeNodeOpen(true, ImGuiCond_FirstUseEver);
+        ImGui::SetNextTreeNodeOpen(false, ImGuiCond_FirstUseEver);
         if (ImGui::CollapsingHeader("Measure")) {
           auto previous_gui_measure {gui_measure};
           if (ImGui::Combo("Measure##combo",
@@ -535,6 +544,8 @@ int main(int, char**) {
           }
 
           if (percolation_mode == PercolationMode::flow) {
+            constexpr float purple {0.9F};
+            push_style_hue(purple);
             if (supervisor.done_percolation() or auto_percolate) {
               begin_disable_items();
               ImGui::Button("Percolate!");
@@ -543,6 +554,7 @@ int main(int, char**) {
               supervisor.stop_flow();
               supervisor.flow_fully();
             }
+            pop_style_hue();
             ImGui::SameLine();
             if (ImGui::Button("Reset")) {
               supervisor.reset_percolation();
@@ -728,7 +740,7 @@ int main(int, char**) {
       if (lattice) {
         lattice_window.push_data(lattice);
       }
-      lattice_window.show(lattice_window_visible);
+      lattice_window.show(lattice_window_visible, torus);
     }  // Lattice window
 
 

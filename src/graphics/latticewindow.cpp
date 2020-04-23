@@ -5,10 +5,11 @@
 #include <string>
 #include <thread>
 
-#include "utility.h"
-#include "latticewindow.h"
-#include "lattice.h"
 #include "imgui/imgui.h"
+
+#include "latticewindow.h"
+#include "utility.h"
+#include "lattice.h"
 
 // Needed for operator overloading for ImVec2
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
@@ -50,7 +51,7 @@ void LatticeWindow::push_data(Lattice* data) {
   worker_cond.notify_all();
 }
 
-void LatticeWindow::show(bool &visible) {
+void LatticeWindow::show(bool &visible, bool torus) {
   ImGui::Begin(title.c_str(), &visible);
   ScopeGuard imgui_guard_1 {[]() { ImGui::End(); }};
   auto window {ImGui::GetCurrentWindow()};
@@ -60,7 +61,7 @@ void LatticeWindow::show(bool &visible) {
 
   // Leave spacing for the message line at the bottom of the window.
   const float footer_height_to_reserve {ImGui::GetTextLineHeightWithSpacing()};
-  ImGui::BeginChild("Lattice", ImVec2(0, - footer_height_to_reserve));
+  ImGui::BeginChild(title.c_str(), ImVec2(0, - footer_height_to_reserve));
 
   const ImVec2 pos {window->DC.CursorPos};
   const ImVec2 frame_size {ImGui::GetContentRegionAvail()};
@@ -68,53 +69,107 @@ void LatticeWindow::show(bool &visible) {
 
   if (ImGui::ItemAdd(frame, 0)) {
     // Frame is not clipped, so show the lattice.
-    texture_data_mutex.lock();
     if (texture_data_ready) {
-      send_texture_data();
       texture_data_ready = false;
+      send_texture_data();
     }
-    texture_data_mutex.unlock();
 
-    // There's something to draw: we've rendered at least once before.
+    // Mouse controls
+    if (ImGui::IsItemHovered()) {
+      auto io {ImGui::GetIO()};
+
+      // Mouse scroll: zooming
+      int mouse_wheel_input {static_cast<int>(io.MouseWheel * 1.01F)}; // Nearest integer
+      if (mouse_wheel_input != 0) {
+        float zoom_scale_old {pow(zoom_increment, (float)zoom_level)};
+        zoom_level += mouse_wheel_input;
+        if (!torus) {
+          // Can't zoom out to more than 100%.
+          zoom_level = std::max(0, zoom_level);
+        } else {
+          // Prevent video glitches.
+          zoom_level = std::max(-10, zoom_level);
+        }
+        zoom_scale = pow(zoom_increment, (float)zoom_level);
+        if (mouse_wheel_input && ImGui::IsMousePosValid()) {
+          // Normalized mouse coordinates: Between 0.0F and 1.0F.
+          ImVec2 mouse_pos {
+            (io.MousePos.x - pos.x) / frame_size.x,
+            (io.MousePos.y - pos.y) / frame_size.y
+          };
+          uv0.x += mouse_pos.x * (zoom_scale_old - zoom_scale);
+          uv0.y += mouse_pos.y * (zoom_scale_old - zoom_scale);
+        }
+      }
+
+      // Mouse drag: panning
+      if (ImGui::IsMouseDragging(0, 0.0F)) {
+        ImVec2 drag {io.MouseDelta};
+        uv0.x -= drag.x * zoom_scale / frame_size.x;
+        uv0.y -= drag.y * zoom_scale / frame_size.y;
+      }
+    }
+
+    // Re-adjust zoom / pan.
+
+    // TODO Fix bug: If user unchecks "torus", but the new lattice hasn't finished rendering, then
+    // the user can navigate the non-toral lattice like a toral lattice.
+    if (!torus) {
+      // Clamp zoom level.
+      zoom_level = std::max(0, zoom_level);
+      zoom_scale = pow(zoom_increment, (float)zoom_level);
+      // Re-adjust to not see boundary.
+      uv0.x = clamp(uv0.x, 0.0F, 1.0F - zoom_scale);
+      uv0.y = clamp(uv0.y, 0.0F, 1.0F - zoom_scale);
+    }
+
     if (glIsTexture(gl_texture)) {
+      // There's something to draw: we've rendered at least once before.
 
-      // For usage of ImGui::Image, see:
-      // <https://github.com/ocornut/imgui/wiki/Image-Loading-and-Displaying-Examples \
-      //                                                    #About-texture-coordinates>
-      ImGui::Image((void*)(intptr_t)gl_texture, ImVec2(frame.GetWidth(), frame.GetHeight()));
+      // UV texture coordinates: see
+      //     <https://github.com/ocornut/imgui/wiki/Image-Loading-and-Displaying-Examples>.
+      ImVec2 uv1 {uv0.x + zoom_scale, uv0.y + zoom_scale};
+      ImGui::Image((void*)(intptr_t)gl_texture, frame_size, uv0, uv1);
 
       // Render border, unless zoomed out too far.
+      // TODO Make this less glitchy on high zoom levels. Is there any way to "clip" the DrawList
+      // to stay inside the Image area?
       auto draw_list {ImGui::GetForegroundDrawList()};
-      ImVec2 square_size {frame_size.x / gl_texture_width, frame_size.y / gl_texture_height};
+      ImVec2 square_size {
+        frame_size.x / (zoom_scale * gl_texture_width),
+        frame_size.y / (zoom_scale * gl_texture_height)};
       float resolution {std::min(square_size.x, square_size.y)};
       if (resolution >= 20.0F) {
         int thickness {std::max(1, (int)((resolution - 20.0F) / 16.0F))};
-        // Prevent antialiasing when thickness is even.
-        float offset {thickness % 2 == 0 ? 0.5F : 0.0F};
+        float offset_line {thickness % 2 == 0 ? 0.5F : 0.0F};  // prevent antialiasing
+        float offset_x {fmod((1.0F - uv0.x) * frame_size.x / zoom_scale, square_size.x)};
+        float offset_y {fmod((1.0F - uv0.y) * frame_size.y / zoom_scale, square_size.y)};
         float alpha {clamp((resolution - 20.0F) / 20.0F, 0.0F, 1.0F)};
         auto border_color = ImGui::GetColorU32(ImVec4(0.0F, 0.0F, 0.0F, alpha));
-        for (auto y {1}; y < gl_texture_height; ++y) {
+        for (auto y {pos.y}; y + offset_y < frame.Max.y; y += square_size.y) {
           // Calling floor() prevents ImGui from doing antialiasing when thickness == 1.
-          auto top {ImVec2(frame.Min.x, floor(frame.Min.y + y * square_size.y) + offset)};
-          auto bot {ImVec2(frame.Max.x, floor(frame.Min.y + y * square_size.y) + offset)};
-          draw_list->AddLine(top, bot, border_color, (float)thickness);
-        }
-        for (auto x {1}; x < gl_texture_width; ++x) {
-          auto left {ImVec2(floor(frame.Min.x + x * square_size.x) + offset, frame.Min.y)};
-          auto right {ImVec2(floor(frame.Min.x + x * square_size.x) + offset,frame.Max.y)};
+          auto left {ImVec2(frame.Min.x, floor(y + offset_y) + offset_line)};
+          auto right {ImVec2(frame.Max.x, floor(y + offset_y) + offset_line)};
           draw_list->AddLine(left, right, border_color, (float)thickness);
+        }
+        for (auto x {pos.x}; x + offset_x < frame.Max.x; x += square_size.x) {
+          auto top {ImVec2(floor(x + offset_x) + offset_line, frame.Min.y)};
+          auto bot {ImVec2(floor(x + offset_x) + offset_line, frame.Max.y)};
+          draw_list->AddLine(top, bot, border_color, (float)thickness);
         }
       }
     }
-  }
-
+  }  // Frame holding the lattice
   ImGui::EndChild();
+
   if (painting) {
     if (ImGui::SmallButton("Abort")) {
       painting = false;
     }
     ImGui::SameLine();
     ImGui::Text("Rendering...");
+  } else {
+    ImGui::Text("Scale: %.0f%% (scroll to zoom; drag to pan)", 100.0F / zoom_scale);
   }
 }
 
@@ -156,10 +211,10 @@ void LatticeWindow::paint_texture_data(const Lattice* data) {
   // Textures can be very large: No point in reallocating unless the size has changed.  We use two
   // buffers so that rendering can be done in parallel with sending to the GPU. This is important
   // during "flowing" mode.
+  texture_data_mutex.lock();
   if (width != texture_data_width or
       height != texture_data_height or
       texture_data == nullptr) {
-    texture_data_mutex.lock();
     delete[] texture_data;
     texture_data = new uint32_t[width * height];
     texture_data_width = width;
@@ -168,6 +223,8 @@ void LatticeWindow::paint_texture_data(const Lattice* data) {
 
     delete[] texture_data_painting;
     texture_data_painting = new uint32_t[width * height];
+  } else {
+    texture_data_mutex.unlock();
   }
 
   // Draw pixels into texture.
@@ -175,7 +232,7 @@ void LatticeWindow::paint_texture_data(const Lattice* data) {
   //      Idea: Pass the entire block of data in the lattice to a shader, and do the color
   //      translation on the GPU.
   constexpr uint32_t grey = 0x202020FF;
-  constexpr uint32_t red = 0x0000FFFF;
+  constexpr uint32_t red = 0xFF0000FF;
   constexpr uint32_t green = 0x00FF00FF;
   constexpr uint32_t blue = 0x004CFFFF;
   constexpr uint32_t cyan = 0x2CCDFFFF;
@@ -200,7 +257,7 @@ void LatticeWindow::paint_texture_data(const Lattice* data) {
       default:
         // This can sometimes happen if lattice generation is aborted (so there's garbage in the
         // memory).
-        site_color = black;
+        site_color = red;
         break;
       }
       texture_data_painting[y*width + x] = site_color;
@@ -224,13 +281,13 @@ void LatticeWindow::paint_texture_data(const Lattice* data) {
 
   if (painting) {  // Unless aborted
     texture_data_mutex.lock();
-    auto tmp {texture_data};
+    uint32_t* tmp {texture_data};
     texture_data = texture_data_painting;
     texture_data_painting = tmp;
-    texture_data_ready = true;
     texture_data_mutex.unlock();
+    texture_data_ready = true;
+    painting = false;
   }
-  painting = false;
 }
 
 void LatticeWindow::send_texture_data() {
@@ -251,6 +308,8 @@ void LatticeWindow::send_texture_data() {
   // TODO When downsampling, we can get a Moire pattern. So do our own interpolation, instead.
   // TODO This is quite slow for large textures, and sometimes causes a noticeable delay. But to
   // call this in a separate thread, we have to figure out how context management works in OpenGL.
+  // TODO Try glTexSubImage2D to copy without allocating?
+  texture_data_mutex.lock();
   glTexImage2D(
     GL_TEXTURE_2D, 0, GL_RGBA,
     texture_data_width,
@@ -260,4 +319,5 @@ void LatticeWindow::send_texture_data() {
   IM_ASSERT(glIsTexture(gl_texture));
   gl_texture_width = texture_data_width;
   gl_texture_height = texture_data_height;
+  texture_data_mutex.unlock();
 }

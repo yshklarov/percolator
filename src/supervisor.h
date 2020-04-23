@@ -63,8 +63,9 @@ private:
   Lattice* lattice_copy {nullptr};
   std::mutex lattice_copy_mutex;
   std::atomic_bool lattice_copy_requested {false};
-  std::atomic<unsigned int> lattice_width;
-  std::atomic<unsigned int> lattice_height;
+  std::mutex size_mutex;
+  unsigned int lattice_width;
+  unsigned int lattice_height;
   measure::filler lattice_measure;
   std::mutex lattice_measure_mutex;
   std::map<const unsigned int, unsigned int, ReverseCmp> cluster_sizes;

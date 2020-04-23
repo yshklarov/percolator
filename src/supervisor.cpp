@@ -42,8 +42,10 @@ Supervisor::~Supervisor() {
 // Sets the size of the lattice. Note that fill() must be called subsequently to actually create
 // the new lattice.
 void Supervisor::set_size(unsigned int width, unsigned int height) {
+  size_mutex.lock();
   lattice_width = width;
   lattice_height = height;
+  size_mutex.unlock();
 }
 
 // Sets a new measure (but does not fill the lattice).
@@ -209,6 +211,8 @@ float Supervisor::cluster_largest_proportion() {
   //  // almost never exactly bernoulli_p.
   //  base /= bernoulli_p;
   //}
+  std::unique_lock<std::mutex> lock {size_mutex};
+  // Race condition: What if dimensions have desynchronized from max_cluster_size?
   return base * max_cluster_size / (lattice_width * lattice_height);
 }
 
@@ -224,7 +228,6 @@ Lattice* Supervisor::get_lattice_copy(double copy_timeout_ms) {
   if (!acquired) {
     if (!stopwatch.is_running()) {
       stopwatch.start();
-      return nullptr;
     } else if (stopwatch.elapsed_ms() >= copy_timeout_ms) {
       lattice_copy_mutex.lock();
       acquired = true;
@@ -304,26 +307,31 @@ void Supervisor::abort() {
 
 void Supervisor::make_lattice_copy_if_needed() {
   request_mutex.lock();
-  if (lattice_copy_requested && lattice) {
-    lattice_copy_requested = false;
+  if (!lattice_copy_requested) {
     request_mutex.unlock();
-    lattice_copy_mutex.lock();
-    running_copy = true;
-    delete lattice_copy;
-    lattice_mutex.lock();
-    // TODO Allow abort in the middle of a copy operation, if running_copy is made false.
-    lattice_copy = new Lattice(*lattice);
-    changed_since_copy = false;
-    lattice_mutex.unlock();
-    running_copy = false;
-    lattice_copy_mutex.unlock();
-  } else {
-    request_mutex.unlock();
+    return;
   }
+  lattice_copy_requested = false;
+  request_mutex.unlock();
+
+  lattice_copy_mutex.lock();
+  running_copy = true;
+  delete lattice_copy;
+  lattice_mutex.lock();
+  // TODO Allow abort in the middle of a copy operation, if running_copy is made false.
+  if (lattice) {
+    lattice_copy = new Lattice(*lattice);
+  } else {
+    lattice_copy = nullptr;
+  }
+  changed_since_copy = false;
+  lattice_mutex.unlock();
+  running_copy = false;
+  lattice_copy_mutex.unlock();
 }
 
 void Supervisor::compute_cluster_sizes() {
-  std::unique_lock<std::mutex> lock(cluster_sizes_mutex);
+  std::unique_lock<std::mutex> lock_cs(cluster_sizes_mutex);
   cluster_sizes.clear();
   max_cluster_size = 0;
   auto f {
@@ -332,11 +340,10 @@ void Supervisor::compute_cluster_sizes() {
       cluster_sizes[size] += 1;
       max_cluster_size = std::max(size, max_cluster_size.load());
     }};
-  lattice_mutex.lock();
+  std::unique_lock<std::mutex> lock_l(lattice_mutex);
   running_cluster_sizes = true;
   lattice->for_each_cluster(f, std::ref(running_cluster_sizes));
   running_cluster_sizes = false;
-  lattice_mutex.unlock();
 }
 
 void Supervisor::worker() {
@@ -384,16 +391,19 @@ void Supervisor::worker() {
     } else if (fill_requested) {
       fill_requested = false;
       request_mutex.unlock();
+
+      size_mutex.lock();
+      auto w {lattice_width};
+      auto h {lattice_height};
+      size_mutex.unlock();
+
       bool bad_alloc {false};
       lattice_mutex.lock();
       running_fill = true;
-      changed_since_copy = true;
-      if (!lattice ||
-          lattice->get_width() != lattice_width ||
-          lattice->get_height() != lattice_height) {
+      if (!lattice || lattice->get_width() != w || lattice->get_height() != h) {
         delete lattice;
         try {
-          lattice = new Lattice(lattice_width, lattice_height);
+          lattice = new Lattice(w, h);
         } catch (std::bad_alloc& ba) {
           // This is not very useful: modern operating systems over-allocate memory so the error
           // will typically occur later when the memory is accessed.
@@ -408,6 +418,7 @@ void Supervisor::worker() {
       auto lm {lattice_measure};
       lattice_measure_mutex.unlock();
       lattice->fill(lm, std::ref(running_fill));
+      changed_since_copy = true;
       lattice_mutex.unlock();
 
       request_mutex.lock();
