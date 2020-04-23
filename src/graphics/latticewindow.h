@@ -33,9 +33,9 @@ private:
   constexpr static float zoom_increment {0.8F};
   const int min_zoom_level {-10};
   const int max_zoom_level {(int)(log(0.00005)/log(0.8))};
-  int zoom_level {0};
-  ImVec2 uv0 {0.0F, 0.0F};
-  float zoom_scale {1.0F};
+  int zoom_level;
+  ImVec2 uv0;
+  float zoom_scale;
 
   std::mutex lattice_mutex;
   Lattice* lattice {nullptr};
@@ -63,6 +63,7 @@ private:
   void worker();
   void paint_texture_data(const Lattice* data);
   void send_texture_data();
+  void reset_view();
 };
 
 #endif  // LATTICEWINDOW_H

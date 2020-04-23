@@ -27,7 +27,10 @@
 
 LatticeWindow::LatticeWindow(const std::string &window_title)
   : title {window_title}
-  , worker_thread { [this]() { worker(); } } {}
+  , worker_thread { [this]() { worker(); } }
+{
+  reset_view();
+}
 
 LatticeWindow::~LatticeWindow() {
   painting = false;
@@ -174,6 +177,12 @@ void LatticeWindow::show(bool &visible) {
     ImGui::Text("Rendering...");
   } else {
     ImGui::Text("Scale: %.0f%% (scroll to zoom; drag to pan)", 100.0F / zoom_scale);
+    ImGui::SameLine();
+    ImGui::Dummy(ImVec2(0.0F, 0.0F));  // Horizontal spacing
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Reset view")) {
+      reset_view();
+    }
   }
 }
 
@@ -326,4 +335,11 @@ void LatticeWindow::send_texture_data() {
   gl_texture_height = texture_data_height;
   gl_texture_wraparound = texture_data_wraparound;
   texture_data_mutex.unlock();
+}
+
+void LatticeWindow::reset_view() {
+  zoom_level = 0;
+  zoom_scale = 1.0F;
+  uv0.x = 0.0F;
+  uv0.y = 0.0F;
 }
