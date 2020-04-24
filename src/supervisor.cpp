@@ -1,28 +1,24 @@
 #include <algorithm>
 #include <cassert>
 #include <condition_variable>
-#include <deque>
 #include <future>
 #include <map>
 #include <mutex>
 #include <optional>
 #include <queue>
 #include <string>
+#include <thread>
 
 #include "utility.h"
 #include "supervisor.h"
+
 
 Supervisor::Supervisor(unsigned int width, unsigned int height, measure::filler f)
   : lattice_width {width}
   , lattice_height {height}
   , lattice_measure {f}
   , flow_direction {FlowDirection::top}
-  , worker_thread { [this]() { worker(); } }
-{
-  lattice_mutex.lock();
-  lattice = new Lattice(1, 1);
-  lattice_mutex.unlock();
-}
+  , worker_thread {&Supervisor::worker, this} { }
 
 Supervisor::~Supervisor() {
   // Terminate worker thread
@@ -354,6 +350,10 @@ void Supervisor::compute_cluster_sizes() {
 
 void Supervisor::worker() {
   bool skip_copy {false};
+  lattice_mutex.lock();
+  lattice = new Lattice(1, 1);
+  lattice_mutex.unlock();
+
   request_mutex.lock();
   while (!terminate_requested) {
     request_mutex.unlock();
@@ -437,7 +437,6 @@ void Supervisor::worker() {
       }
       running_fill = false;
       if (flow_fully_requested || find_clusters_requested) {
-        request_mutex.unlock();
         // If we made a lattice copy here, the GUI would sometimes briefly show an un-percolated
         // lattice when it isn't wanted.
         skip_copy = true;
@@ -500,6 +499,7 @@ void Supervisor::worker() {
       request_mutex.unlock();
       pause_ms(8); // TODO Wait for a condition variable instead
     }
+    request_mutex.lock();
   }  // while (!terminated)
   request_mutex.unlock();
 }  // worker()

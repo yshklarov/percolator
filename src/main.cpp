@@ -119,9 +119,11 @@ void handle_keyboard_input(GLFWwindow* window) {
 
 int initialize_gui(GLFWwindow* &window) {
 #ifdef _WIN32
+#ifdef NDEBUG
   // TODO Set up a WinMain. For now, we'll just hide the console window.
   // Options: SW_HIDE, SW_MINIMIZE, ...
   ShowWindow(GetConsoleWindow(), SW_HIDE);
+#endif
 #endif
 
   // Set up GLFW window
@@ -353,7 +355,7 @@ int main(int, char**) {
   bool torus {false};
   auto auto_percolate {false};
   auto auto_flow {false};
-  auto auto_find_clusters {true};
+  auto auto_find_clusters {false};
 
   // A supervisor oversees a single lattice. TODO Sync up measure here with gui_measure.
   auto supervisor {Supervisor(lattice_size, lattice_size, measure::pattern_3())};

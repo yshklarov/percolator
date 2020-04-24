@@ -8,6 +8,7 @@
 #include <optional>
 #include <queue>
 #include <string>
+#include <thread>
 
 #include "utility.h"
 #include "lattice.h"
@@ -88,7 +89,7 @@ private:
   std::atomic_bool running_percolation {false};
   std::atomic_bool running_reset {false};
   std::future<void> flow_thread;
-  volatile std::atomic_bool changed_since_copy {true};
+  std::atomic_bool changed_since_copy {false};
 
   std::queue<std::string> errors;
 
