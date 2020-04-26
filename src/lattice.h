@@ -6,12 +6,36 @@
 #include <functional>
 #include <vector>
 
-enum class SiteStatus : std::int8_t {open, closed, flooded, freshly_flooded};
+
+#pragma pack(push, 1)  // Only use 1 byte per Site
+struct Site {
+  bool open : 1;
+  bool flooded : 1;
+  bool fresh : 1;
+  bool :1;  // padding
+  bool connected_up : 1;
+  bool connected_down : 1;
+  bool connected_left : 1;
+  bool connected_right : 1;
+};
+#pragma pack(pop)
+
+struct Coords {
+public:
+  Coords(int x_coord, int y_coord)
+    : x {x_coord}
+    , y {y_coord}
+    {}
+  Coords() =delete;
+  int x;
+  int y;
+};
+
 enum class FlowDirection : int {top, all_sides};
 enum class PercolationMode {flow, clusters};
 
 namespace measure {
-  using filler = std::function<SiteStatus (int, int)>;
+  using filler = std::function<bool (int, int)>;
   filler open();
   filler pattern_1();
   filler pattern_2();
@@ -19,19 +43,7 @@ namespace measure {
   filler bernoulli(double p);
 };
 
-class Site {
-public:
-  Site(int x_coord, int y_coord)
-    : x {x_coord}
-    , y {y_coord}
-    {}
-  Site() =delete;
-  // TODO Write copy and move constructors?
-  int x;
-  int y;
-};
-
-using Cluster = std::vector<Site>;
+using Cluster = std::vector<Coords>;
 
 class Lattice {
 public:
@@ -66,7 +78,8 @@ public:
   bool done_percolation();
   void reset_percolation();
 
-  SiteStatus site_status(int x, int y) const;
+  Site get_site(int x, int y) const;
+  void set_site(int x, int y, Site site);
   bool is_open(int x, int y) const;
   bool is_flooded(int x, int y) const;
   bool is_freshly_flooded(int x, int y) const;
@@ -75,13 +88,13 @@ public:
   void for_each_cluster(std::function<void (Cluster)> f, std::atomic_bool &run) const;
 
 private:
-  SiteStatus* grid;
+  Site* grid;
   unsigned int grid_width;
   unsigned int grid_height;
   bool begun_percolation;
   FlowDirection flow_direction;
   bool torus {false};
-  std::vector<Site> freshly_flooded;
+  std::vector<Coords> freshly_flooded;
 
   // For some reason, sorting a vector of raw pointers is *much* faster than sorting a vector of
   // vectors. But why? The difference in memory is not that large: sizeof(&Cluster) == 8;
@@ -96,8 +109,7 @@ private:
   void allocate_grid();
   void clear_clusters();
 
-  SiteStatus grid_get(int x, int y) const;
-  void grid_set(int x, int y, SiteStatus new_status);
+  Site* get_site_ptr(int x, int y);
 };
 
 #endif  // LATTICE_H

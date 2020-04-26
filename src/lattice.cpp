@@ -22,6 +22,7 @@ Lattice::Lattice (unsigned int width, unsigned int height)
   , begun_percolation {false}
   , flow_direction {FlowDirection::all_sides}
 {
+  assert(sizeof(Site) == 1);
   allocate_grid();
 }
 
@@ -110,30 +111,30 @@ namespace measure {
   filler open() {
     // This has to be static so that we can compare fillers, e.g., open() == open() is true.
     const static auto f {
-      [](int x, int y) {
-        return SiteStatus::open;
+      [](int x, int y) -> bool {
+        return true;
       }};
     return f;
   }
 
   filler pattern_1() {
     const static auto f {
-      [](int x, int y) {
-        return (x + y) % 2 ? SiteStatus::open : SiteStatus::closed;
+      [](int x, int y) -> bool {
+        return (x + y) % 2;
       }};
     return f;
   }
   filler pattern_2() {
     const static auto f {
-      [](int x, int y) {
-        return x % 5 || y % 5 ? SiteStatus::open : SiteStatus::closed;
+      [](int x, int y) -> bool {
+        return x % 5 || y % 5;
       }};
     return f;
   }
   filler pattern_3() {
     const static auto f {
-      [](int x, int y) {
-        return (x + y) % 10 ? SiteStatus::open : SiteStatus::closed;
+      [](int x, int y) -> bool {
+        return (x + y) % 10;
       }};
     return f;
   }
@@ -153,8 +154,7 @@ namespace measure {
 
     // TODO Return the *same* lambda if called with the same p twice (do this more elegantly: look
     // into memoization of functions).
-    return [gen](int x, int y) { return
-        gen() ? SiteStatus::open : SiteStatus::closed; };
+    return [gen](int x, int y) { return gen(); };
   }
 };
 
@@ -164,7 +164,9 @@ void Lattice::fill(measure::filler f, std::atomic_bool &run) {
   begun_percolation = false;
   for_each_site(
     [&](int x, int y) {
-      grid_set(x, y, f(x, y));
+      Site* site {get_site_ptr(x, y)};
+      site->open = f(x, y);
+      site->flooded = false;
     }, run);
 }
 
@@ -173,10 +175,14 @@ bool Lattice::flood_entryways() {
   auto flooded_something_new {false};
   auto flood_entryway {
     [this, &flooded_something_new](int x, int y) {
-      if (grid_get(x, y) == SiteStatus::open) {
-        grid_set(x, y, SiteStatus::freshly_flooded);
-        freshly_flooded.emplace_back(x, y);
-        flooded_something_new = true;
+      Site* site {get_site_ptr(x, y)};
+      if (site->open) {
+        if (!site->flooded) {
+          site->flooded = true;
+          site->fresh = true;
+          freshly_flooded.emplace_back(x, y);
+          flooded_something_new = true;
+        }
       }
     }};
   begun_percolation = true;
@@ -217,26 +223,42 @@ bool Lattice::flow_one_step(std::atomic_bool &run) {
   if (!begun_percolation) {
     return flood_entryways();
   }
-  static std::vector<Site> currently_flooding;
+  static std::vector<Coords> currently_flooding;
   currently_flooding.clear();
   for (auto p : freshly_flooded) {
     if (!run) { break; }
-    grid_set(p.x, p.y, SiteStatus::flooded);  // No longer fresh
-    if (p.y > 0 && grid_get(p.x, p.y - 1) == SiteStatus::open) {
-      grid_set(p.x, p.y - 1, SiteStatus::freshly_flooded);
-      currently_flooding.emplace_back(p.x, p.y-1);
+    get_site_ptr(p.x, p.y)->fresh = false;
+    if (p.y > 0) {
+      auto site {get_site_ptr(p.x, p.y - 1)};
+      if (site->open && !site->flooded) {
+        site->flooded = true;
+        site->fresh = true;
+        currently_flooding.emplace_back(p.x, p.y-1);
+      }
     }
-    if (p.y < grid_height - 1 && grid_get(p.x, p.y + 1) == SiteStatus::open) {
-      grid_set(p.x, p.y + 1, SiteStatus::freshly_flooded);
-      currently_flooding.emplace_back(p.x, p.y+1);
+    if (p.y < grid_height - 1) {
+      auto site {get_site_ptr(p.x, p.y + 1)};
+      if (site->open && !site->flooded) {
+        site->flooded = true;
+        site->fresh = true;
+        currently_flooding.emplace_back(p.x, p.y+1);
+      }
     }
-    if (p.x > 0 && grid_get(p.x - 1, p.y) == SiteStatus::open) {
-      grid_set(p.x - 1, p.y, SiteStatus::freshly_flooded);
-      currently_flooding.emplace_back(p.x-1, p.y);
+    if (p.x > 0) {
+      auto site {get_site_ptr(p.x - 1, p.y)};
+      if (site->open && !site->flooded) {
+        site->flooded = true;
+        site->fresh = true;
+        currently_flooding.emplace_back(p.x-1, p.y);
+      }
     }
-    if (p.x < grid_width - 1 && grid_get(p.x + 1, p.y) == SiteStatus::open) {
-      grid_set(p.x + 1, p.y, SiteStatus::freshly_flooded);
-      currently_flooding.emplace_back(p.x+1, p.y);
+    if (p.x < grid_width - 1) {
+      auto site {get_site_ptr(p.x + 1, p.y)};
+      if (site->open && !site->flooded) {
+        site->flooded = true;
+        site->fresh = true;
+        currently_flooding.emplace_back(p.x+1, p.y);
+      }
     }
   }
   freshly_flooded.swap(currently_flooding);
@@ -247,35 +269,44 @@ inline bool Lattice::flow_one_step_torus(std::atomic_bool &run) {
   if (!begun_percolation) {
     return flood_entryways();
   }
-  static std::vector<Site> currently_flooding;
+  static std::vector<Coords> currently_flooding;
   currently_flooding.clear();
   for (auto p : freshly_flooded) {
     if (!run) { break; }
-    grid_set(p.x, p.y, SiteStatus::flooded);  // No longer fresh
+    get_site_ptr(p.x, p.y)->fresh = false;
     auto nx {p.x};
     auto ny {p.y - 1};
     if (ny < 0) { ny += grid_height; };
-    if (grid_get(nx, ny) == SiteStatus::open) {
-      grid_set(nx, ny, SiteStatus::freshly_flooded);
+    Site* site;
+    site = get_site_ptr(nx, ny);
+    if (site->open && !site->flooded) {
+      site->flooded = true;
+      site->fresh = true;
       currently_flooding.emplace_back(nx, ny);
     }
     ny += 2;
     if (ny > grid_height - 1 ) { ny -= grid_height; }
-    if (grid_get(nx, ny) == SiteStatus::open) {
-      grid_set(nx, ny, SiteStatus::freshly_flooded);
+    site = get_site_ptr(nx, ny);
+    if (site->open && !site->flooded) {
+      site->flooded = true;
+      site->fresh = true;
       currently_flooding.emplace_back(nx, ny);
     }
     nx -= 1;
     if (nx < 0) { nx += grid_width; }
     ny = p.y;
-    if (grid_get(nx, ny) == SiteStatus::open) {
-      grid_set(nx, ny, SiteStatus::freshly_flooded);
+    site = get_site_ptr(nx, ny);
+    if (site->open && !site->flooded) {
+      site->flooded = true;
+      site->fresh = true;
       currently_flooding.emplace_back(nx, ny);
     }
     nx += 2;
     if (nx > grid_width - 1) { nx -= grid_width; }
-    if (grid_get(nx, ny) == SiteStatus::open) {
-      grid_set(nx, ny, SiteStatus::freshly_flooded);
+    site = get_site_ptr(nx, ny);
+    if (site->open && !site->flooded) {
+      site->flooded = true;
+      site->fresh = true;
       currently_flooding.emplace_back(nx, ny);
     }
   }
@@ -311,8 +342,10 @@ void Lattice::find_clusters(std::atomic_bool &run) {
   auto begin_flooding_at {
     [&](int x, int y) -> bool {
       freshly_flooded.clear();
-      if (grid_get(x, y) == SiteStatus::open) {
-        grid_set(x, y, SiteStatus::freshly_flooded);
+      Site* site {get_site_ptr(x, y)};
+      if (site->open && !site->flooded) {
+        site->flooded = true;
+        site->fresh = true;
         freshly_flooded.emplace_back(x, y);
         return true;
       }
@@ -353,30 +386,29 @@ bool Lattice::done_percolation() {
 
 void Lattice::reset_percolation() {
   for (auto i {0}; i < grid_width * grid_height; ++i) {
-    if (grid[i] == SiteStatus::flooded or
-        grid[i] == SiteStatus::freshly_flooded) {
-      grid[i] = SiteStatus::open;
-    }
+    grid[i].flooded = false;
   }
   clear_clusters();
   freshly_flooded.clear();
   begun_percolation = false;
 }
 
-SiteStatus Lattice::site_status(int x, int y) const {
-  return grid_get(x,y);
+Site Lattice::get_site(int x, int y) const {
+  return grid[y * grid_width + x];
+}
+inline void Lattice::set_site(int x, int y, Site site) {
+  grid[y * grid_width + x] = site;
 }
 bool Lattice::is_open(int x, int y) const {
-  return grid_get(x,y) == SiteStatus::open;
+  return get_site(x,y).open;
 }
 bool Lattice::is_flooded(int x, int y) const {
-  return
-    grid_get(x,y) == SiteStatus::flooded or
-    grid_get(x,y) == SiteStatus::freshly_flooded;
+  return get_site(x,y).flooded;
 }
 bool Lattice::is_freshly_flooded(int x, int y) const {
   // This is faster than searching the vector freshly_flooded.
-  return grid_get(x,y) == SiteStatus::freshly_flooded;
+  Site site {get_site(x, y)};
+  return site.flooded && site.fresh;
 }
 
 void Lattice::for_each_site(std::function<void (int, int)> f, std::atomic_bool &run) const {
@@ -398,7 +430,7 @@ void Lattice::for_each_cluster(std::function<void (Cluster)> f, std::atomic_bool
 // state, possibly containing garbage data: The caller must subsequently fill the lattice by
 // calling fill().
 void Lattice::allocate_grid() {
-  grid = new SiteStatus[grid_width * grid_height];
+  grid = new Site[grid_width * grid_height] ();
 }
 
 void Lattice::clear_clusters() {
@@ -408,9 +440,6 @@ void Lattice::clear_clusters() {
   clusters.clear();
 }
 
-inline SiteStatus Lattice::grid_get(int x, int y) const {
-  return grid[y * grid_width + x];
-}
-inline void Lattice::grid_set(int x, int y, SiteStatus new_status) {
-  grid[y * grid_width + x] = new_status;
+Site* Lattice::get_site_ptr(int x, int y) {
+  return grid + (y * grid_width + x);
 }

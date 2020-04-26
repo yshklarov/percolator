@@ -258,24 +258,20 @@ void LatticeWindow::paint_texture_data(const Lattice* data) {
   data->for_each_site(
     [&] (const int x, const int y) {
       uint32_t site_color {white};
-      switch (data->site_status(x, y)) {
-      case SiteStatus::open:
-        site_color = white;
-        break;
-      case SiteStatus::closed:
+      Site site {data->get_site(x, y)};
+      if (site.open) {
+        if (site.flooded) {
+          if (site.fresh) {
+            site_color = cyan;
+          } else {
+            site_color = blue;
+          }
+        } else {
+          site_color = white;
+        }
+      } else {
+        // Site is closed
         site_color = grey;
-        break;
-      case SiteStatus::flooded:
-        site_color = blue;
-        break;
-      case SiteStatus::freshly_flooded:
-        site_color = cyan;
-        break;
-      default:
-        // This can sometimes happen if lattice generation is aborted (so there's garbage in the
-        // memory).
-        site_color = red;
-        break;
       }
       texture_data_painting[y*width + x] = site_color;
     }, painting);

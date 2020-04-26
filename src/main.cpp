@@ -478,6 +478,7 @@ int main(int, char**) {
                            MeasureIDNames,
                            (int)MeasureID::MAX)) {
             if (gui_measure != previous_gui_measure) {
+              supervisor.stop_flow();
               supervisor.abort();
               regenerate_lattice(supervisor, gui_measure, bernoulli_p);
               do_autos_if_needed();
